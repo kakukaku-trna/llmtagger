@@ -1,0 +1,16 @@
+{
+  "v1": {
+    "TP": 9,
+    "FP": 0,
+    "TN": 10,
+    "FN": 0,
+    "precision": 100.0,
+    "recall": 100.0,
+    "f1": 100.0,
+    "accuracy": 100.0,
+    "total": 19,
+    "success": 19,
+    "failed": 0,
+    "tokens_used": 36710
+  }
+}

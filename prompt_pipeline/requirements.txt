@@ -1,0 +1,10 @@
+openai>=1.30.0
+pyyaml>=6.0
+tenacity>=8.2.0
+pytest>=7.4.0
+pytest-timeout>=2.1.0
+# optional: install for richer features
+# pillow>=10.0.0     # image resize in modality/image.py, modality/bev.py
+# numpy>=1.24.0      # modality/pointcloud.py
+# matplotlib>=3.7.0  # modality/pointcloud.py rendering
+# prefect>=2.14.0    # flows/ orchestration

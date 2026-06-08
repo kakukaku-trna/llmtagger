@@ -1,0 +1,37 @@
+name: blind_curve_vllm
+display_name: 大曲率盲区检测（本地 vLLM）
+version: 1.0
+
+data:
+  mode: local
+  positive_dir: /home/huajiang.sun/model_muse/compressed_videos_pos
+  negative_dir: /home/huajiang.sun/model_muse/compressed_videos_neg
+
+inference:
+  engine: vllm
+  model: Qwen2.5-VL-3B-Instruct
+  workers: 2               # 本地模型并发低
+  timeout_per_sample: 120
+  max_retries: 2
+  vllm_url: http://localhost:8000/v1/chat/completions
+
+target:
+  precision: 80
+  recall: 70
+
+iteration:
+  max_rounds: 1
+  eval_sample_size: 19
+  improve_topk: 2
+  early_stop:
+    no_improvement_rounds: 1
+
+token_budget:
+  per_sample_max: 8000
+  total_per_round_max: 300000
+  total_pipeline_max: 900000
+  alert_threshold: 0.85
+
+alerts:
+  feishu_webhook: null
+  email: null

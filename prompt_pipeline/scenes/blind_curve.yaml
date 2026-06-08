@@ -1,0 +1,45 @@
+name: blind_curve
+display_name: 大曲率盲区检测
+version: 1.0
+
+data:
+  mode: local
+  positive_dir: /home/huajiang.sun/model_muse/positive_data
+  negative_dir: /home/huajiang.sun/model_muse/negative_data
+
+inference:
+  engine: dashscope
+  model: qwen3.7-plus
+  workers: 5
+  timeout_per_sample: 60
+  fps: 2
+  thinking_budget: 512
+  max_retries: 3
+  api_key: ${DASHSCOPE_API_KEY}   # 从环境变量读取，勿硬编码
+  api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+target:
+  precision: 90
+  recall: 90
+
+iteration:
+  max_rounds: 3
+  eval_sample_size: 50
+  full_eval_on_final: true
+  improve_topk: 3
+  early_stop:
+    no_improvement_rounds: 2
+    token_budget_exceeded: true
+
+token_budget:
+  per_sample_max: 3000
+  total_per_round_max: 200000
+  total_pipeline_max: 600000
+  alert_threshold: 0.8
+
+alerts:
+  # 把下面的 null 替换成你的飞书 webhook 地址，即可开启推送
+  # 获取方式：群聊 → 设置 → 机器人 → 添加机器人 → 自定义机器人 → 复制 Webhook
+  feishu_webhook: https://open.feishu.cn/open-apis/bot/v2/hook/2e1e6058-0122-442b-9dfb-6e97506c8014
+  # feishu_webhook: https://open.feishu.cn/open-apis/bot/v2/hook/你的hook地址
+  email: null

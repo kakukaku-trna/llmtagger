@@ -1,0 +1,16 @@
+[
+  {
+    "version": "v2",
+    "from": "v1",
+    "timestamp": "2026-06-08T04:19:17",
+    "failure_count": {
+      "FP": 0,
+      "FN": 2
+    },
+    "metrics_delta": {
+      "f1": 87.5,
+      "precision": 100.0,
+      "recall": 77.8
+    }
+  }
+]

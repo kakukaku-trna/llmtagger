@@ -1,0 +1,237 @@
+"""LLMTagger – unified entry point.
+
+Usage:
+    python run.py --scene blind_curve [--version v1] [--sample 10] [--iterate] [--max-rounds 3]
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+# Allow running from the llmtagger/ directory without installing
+sys.path.insert(0, str(Path(__file__).parent))
+
+from pipeline.config import load_scene
+from pipeline.data.local_loader import load_samples
+from pipeline.evaluate.metrics import (
+    calc_metrics,
+    load_all_versions,
+    print_metrics_report,
+    print_versions_table,
+    save_version_metrics,
+)
+from pipeline.improve.failure_analyzer import analyze_failures
+from pipeline.improve.topk_modifier import (
+    generate_next_prompt,
+    next_version_name,
+    save_new_version,
+)
+from pipeline.inference.batch_runner import BatchRunner
+from pipeline.monitor.alert import AlertLevel, emit_alert
+from pipeline.monitor.token_tracker import TokenTracker
+
+
+# ─────────────────────────────────────────────────────────────
+def load_prompt(scene_cfg, version: str) -> str:
+    p = scene_cfg.prompt_path(version)
+    if not p.exists():
+        raise FileNotFoundError(f"Prompt file not found: {p}")
+    return p.read_text(encoding="utf-8")
+
+
+def _alert(scene_cfg, level, event, detail, **kw):
+    """Wrapper that always injects feishu_webhook and email from scene config."""
+    emit_alert(
+        level, event, detail,
+        feishu_webhook=scene_cfg.alerts.feishu_webhook,
+        email=scene_cfg.alerts.email,
+        **kw,
+    )
+
+
+def _check_budget(tracker: TokenTracker, scene_cfg, scene: str, round_n: int) -> bool:
+    """Return True if pipeline budget exceeded (should stop)."""
+    level = tracker.check_pipeline_budget()
+    if level.value == "exceeded":
+        _alert(
+            scene_cfg, AlertLevel.ERROR,
+            "Token 预算耗尽",
+            "已超出 pipeline 最大 token 上限，停止迭代",
+            scene=scene,
+            tokens_used=tracker.pipeline_total,
+            token_budget=scene_cfg.token_budget.total_pipeline_max,
+        )
+        return True
+    if level.value == "warning":
+        _alert(
+            scene_cfg, AlertLevel.WARNING,
+            "Token 预算告警",
+            f"已超过 {scene_cfg.token_budget.alert_threshold*100:.0f}% 预算阈值",
+            scene=scene,
+            tokens_used=tracker.pipeline_total,
+            token_budget=scene_cfg.token_budget.total_pipeline_max,
+        )
+    return False
+
+
+# ─────────────────────────────────────────────────────────────
+def run_single(args: argparse.Namespace) -> None:
+    """Run a single evaluation round without iteration."""
+    scene_cfg = load_scene(args.scene)
+    version = args.version or scene_cfg.latest_prompt_version()
+    prompt = load_prompt(scene_cfg, version)
+    samples = load_samples(scene_cfg.data, sample_size=args.sample)
+
+    print(f"\n LLMTagger  场景={args.scene}  版本={version}  样本数={len(samples)}")
+    print(f"  推理引擎: {scene_cfg.inference.engine}  模型: {scene_cfg.inference.model}\n")
+
+    tracker = TokenTracker(scene_cfg.token_budget)
+    runner = BatchRunner(
+        config=scene_cfg.inference,
+        tracker=tracker,
+        feishu_webhook=scene_cfg.alerts.feishu_webhook,
+        alert_email=scene_cfg.alerts.email,
+    )
+
+    results = runner.run(samples, prompt)
+
+    metrics = calc_metrics(results)
+    save_version_metrics(args.scene, version, metrics, scene_cfg.metrics_path())
+    print_metrics_report(metrics, version=version, scene=args.scene)
+
+    tracker.end_round()
+    print(tracker.summary_line(args.scene, round_n=1))
+
+    all_versions = load_all_versions(scene_cfg.metrics_path())
+    if len(all_versions) > 1:
+        print_versions_table(all_versions)
+
+
+# ─────────────────────────────────────────────────────────────
+def run_iterate(args: argparse.Namespace) -> None:
+    """Run iterative prompt improvement loop."""
+    scene_cfg = load_scene(args.scene)
+    version = args.version or scene_cfg.latest_prompt_version()
+    prompt = load_prompt(scene_cfg, version)
+    max_rounds = args.max_rounds or scene_cfg.iteration.max_rounds
+    samples = load_samples(scene_cfg.data, sample_size=args.sample)
+
+    print(f"\n LLMTagger (迭代模式)  场景={args.scene}  版本={version}  最大轮次={max_rounds}")
+    print(f"  样本数={len(samples)}  目标: P>={scene_cfg.target.precision}%  R>={scene_cfg.target.recall}%\n")
+
+    tracker = TokenTracker(scene_cfg.token_budget)
+    runner = BatchRunner(
+        config=scene_cfg.inference,
+        tracker=tracker,
+        feishu_webhook=scene_cfg.alerts.feishu_webhook,
+        alert_email=scene_cfg.alerts.email,
+    )
+
+    no_improvement = 0
+    best_f1 = -1.0
+    current_version = version
+    current_prompt = prompt
+
+    for round_n in range(1, max_rounds + 1):
+        print(f"\n{'─'*50}")
+        print(f"  第 {round_n}/{max_rounds} 轮  版本={current_version}")
+        print(f"{'─'*50}")
+
+        # Clear cache per round so re-evaluation uses current prompt
+        runner._cache = {}
+
+        results = runner.run(samples, current_prompt)
+        metrics = calc_metrics(results)
+        save_version_metrics(args.scene, current_version, metrics, scene_cfg.metrics_path())
+        print_metrics_report(metrics, version=current_version, scene=args.scene)
+
+        tracker.end_round()
+        print(tracker.summary_line(args.scene, round_n=round_n))
+
+        # Budget check
+        if _check_budget(tracker, scene_cfg, args.scene, round_n):
+            break
+
+        # Target reached
+        if metrics.meets_target(scene_cfg.target.precision, scene_cfg.target.recall):
+            _alert(
+                scene_cfg, AlertLevel.INFO,
+                "达到评估目标",
+                f"P={metrics.precision:.1f}%  R={metrics.recall:.1f}%  F1={metrics.f1:.1f}%",
+                scene=args.scene,
+                progress=f"{round_n}/{max_rounds}",
+            )
+            break
+
+        # Early stop: no improvement
+        if metrics.f1 > best_f1:
+            best_f1 = metrics.f1
+            no_improvement = 0
+        else:
+            no_improvement += 1
+            print(f"  无改善轮次: {no_improvement}/{scene_cfg.iteration.early_stop.no_improvement_rounds}")
+            if no_improvement >= scene_cfg.iteration.early_stop.no_improvement_rounds:
+                print("  触发早停：连续无改善，停止迭代")
+                break
+
+        # Last round – don't generate next version
+        if round_n == max_rounds:
+            break
+
+        # Generate improved prompt
+        print(f"\n  分析失败案例，生成 Top-{scene_cfg.iteration.improve_topk} 改进 Prompt…")
+        failures = analyze_failures(results)
+        print(failures.summary())
+
+        try:
+            new_prompt = generate_next_prompt(
+                current_prompt=current_prompt,
+                failures=failures,
+                metrics=metrics,
+                current_version=current_version,
+                topk=scene_cfg.iteration.improve_topk,
+                config=scene_cfg.inference,
+            )
+            next_ver = next_version_name(current_version)
+            save_new_version(
+                scene_cfg=scene_cfg,
+                new_prompt=new_prompt,
+                from_version=current_version,
+                new_version=next_ver,
+                failures=failures,
+                metrics_delta={"f1": metrics.f1, "precision": metrics.precision, "recall": metrics.recall},
+            )
+            print(f"  新版本 {next_ver} 已保存 → {scene_cfg.prompt_path(next_ver)}")
+            current_version = next_ver
+            current_prompt = new_prompt
+        except Exception as exc:
+            print(f"  ⚠  Prompt 生成失败: {exc}，保持当前版本继续")
+
+    # Final comparison table
+    all_versions = load_all_versions(scene_cfg.metrics_path())
+    if len(all_versions) > 1:
+        print_versions_table(all_versions)
+
+
+# ─────────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser(
+        description="LLMTagger – multimodal video annotation pipeline"
+    )
+    parser.add_argument("--scene", required=True, help="Scene name (e.g. blind_curve)")
+    parser.add_argument("--version", default=None, help="Prompt version to use (e.g. v1)")
+    parser.add_argument("--sample", type=int, default=None, help="Max samples to use")
+    parser.add_argument("--iterate", action="store_true", help="Enable prompt iteration loop")
+    parser.add_argument("--max-rounds", type=int, default=None, help="Max iteration rounds")
+
+    args = parser.parse_args()
+
+    if args.iterate:
+        run_iterate(args)
+    else:
+        run_single(args)
+
+
+if __name__ == "__main__":
+    main()
