@@ -100,8 +100,14 @@ def _send_feishu(webhook, level, event, detail, fields):
 # ─────────────────────────────────────────────────────────────
 
 def _send_email(to, level, event, detail, fields):
-    from pipeline.monitor.email_alert import EmailConfig, build_html_body, send_email_alert
+    from pipeline.monitor.email_alert import build_html_body, default_email_config, send_email_alert
     subject = f"[LLMTagger {level.value}] {event}"
     html = build_html_body(title=event, body=detail, fields=fields)
-    # EmailConfig with no smtp_host → print preview only (stub mode)
-    send_email_alert(cfg=None, to=to, subject=subject, body=detail, html_body=html)
+    cfg = default_email_config()
+    ok = send_email_alert(cfg=cfg, to=to, subject=subject, body=detail, html_body=html)
+    if ok:
+        print(f"  ↗ 邮件告警已发送至 {to}")
+    elif cfg is None:
+        pass  # stub mode already printed preview
+    else:
+        print(f"  ✗ 邮件告警发送失败，请检查 SMTP 配置")

@@ -33,5 +33,5 @@ token_budget:
   alert_threshold: 0.85
 
 alerts:
-  feishu_webhook: null
+  # 飞书 webhook 已硬编码在程序中，无需配置
   email: null

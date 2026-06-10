@@ -1,11 +1,11 @@
-name: blind_curve
-display_name: 大曲率盲区检测
+name: bus_lane
+display_name: 公交车道检测 (Bus Lane Detection)
 version: 1.0
 
 data:
   mode: local
-  positive_dir: /home/huajiang.sun/model_muse/positive_data
-  negative_dir: /home/huajiang.sun/model_muse/negative_data
+  positive_dir: /home/huajiang.sun/model_muse/bus_lane_pos
+  negative_dir: ""   # 暂无负样本，仅测 recall；若需完整 P/R/F1 请补充负样本目录
 
 inference:
   engine: dashscope
@@ -15,12 +15,12 @@ inference:
   fps: 2
   thinking_budget: 512
   max_retries: 3
-  api_key: ${DASHSCOPE_API_KEY}   # 从环境变量读取，勿硬编码
+  api_key: ${DASHSCOPE_API_KEY}
   api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
 
 target:
-  precision: 90
-  recall: 90
+  precision: 85
+  recall: 85
 
 iteration:
   max_rounds: 3
@@ -33,10 +33,9 @@ iteration:
 
 token_budget:
   per_sample_max: 3000
-  total_per_round_max: 200000
-  total_pipeline_max: 600000
+  total_per_round_max: 300000
+  total_pipeline_max: 900000
   alert_threshold: 0.8
 
 alerts:
-  # 飞书 webhook 已硬编码在程序中，无需配置
   email: huajiang.sun@nio.com

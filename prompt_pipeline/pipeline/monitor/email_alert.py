@@ -3,22 +3,23 @@
 Sends plaintext or HTML email via Python's smtplib.
 
 Usage:
-    from pipeline.monitor.email_alert import send_email_alert, EmailConfig
-    cfg = EmailConfig(
-        smtp_host="smtp.example.com",
-        smtp_port=587,
-        username="alert@example.com",
-        password="secret",
-        from_addr="LLMTagger <alert@example.com>",
-        use_tls=True,
-    )
+    from pipeline.monitor.email_alert import send_email_alert, EmailConfig, default_email_config
+    cfg = default_email_config()   # reads from env vars
     send_email_alert(cfg, to="ops@example.com", subject="Token 告警", body="...")
 
-For MVP the EmailConfig can be left as None — send_email_alert() will print
-a formatted preview and return False without actually sending.
+Env variables:
+    SMTP_HOST      default: mail.nio.com
+    SMTP_PORT      default: 587
+    SMTP_USERNAME  e.g. huajiang.sun@nio.com
+    SMTP_PASSWORD  e.g. your email password / app token
+    SMTP_FROM      e.g. "LLMTagger <huajiang.sun@nio.com>"  (optional, defaults to SMTP_USERNAME)
+
+If SMTP_USERNAME is not set, send_email_alert() falls back to stub mode
+(prints preview to stdout and returns False).
 """
 from __future__ import annotations
 
+import os
 import smtplib
 from dataclasses import dataclass
 from email.mime.multipart import MIMEMultipart
@@ -34,6 +35,25 @@ class EmailConfig:
     password: str = ""
     from_addr: str = ""
     use_tls: bool = True
+
+
+def default_email_config() -> Optional[EmailConfig]:
+    """Build EmailConfig from environment variables.
+
+    Returns None if SMTP_USERNAME is not set (triggers stub mode).
+    """
+    username = os.environ.get("SMTP_USERNAME", "").strip()
+    if not username:
+        return None
+
+    return EmailConfig(
+        smtp_host=os.environ.get("SMTP_HOST", "mail.nio.com"),
+        smtp_port=int(os.environ.get("SMTP_PORT", "587")),
+        username=username,
+        password=os.environ.get("SMTP_PASSWORD", ""),
+        from_addr=os.environ.get("SMTP_FROM", username),
+        use_tls=True,
+    )
 
 
 def send_email_alert(

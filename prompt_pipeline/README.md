@@ -70,43 +70,92 @@ pip install pillow numpy matplotlib   # modality/ 模块依赖
 pip install prefect                   # flows/ Prefect 编排
 ```
 
+### 配置 API Key
+
+在项目根目录创建 `.env` 文件（已加入 `.gitignore`，不提交 git）：
+
+```bash
+# .env
+DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+ADW_USER=dayun.shen
+ADW_PROD_PASS=<your_adw_prod_pass>
+```
+
+`run.py` 启动时自动加载 `.env`，无需手动 `export`。
+
 ### 单场景评估（全量样本）
 
 ```bash
 cd prompt_pipeline
-python run.py --scene blind_curve
+python3 run.py --scene blind_curve
 ```
 
 ### 限定样本数
 
 ```bash
-python run.py --scene blind_curve --sample 10
+python3 run.py --scene blind_curve --sample 10
 ```
 
 ### Prompt 迭代优化
 
 ```bash
-python run.py --scene blind_curve --iterate --max-rounds 3
+python3 run.py --scene blind_curve --iterate --max-rounds 3
 ```
 
 ### 通过 Prefect Flow 运行单场景
 
 ```bash
-python flows/scene_flow.py --scene blind_curve --sample 20
+python3 flows/scene_flow.py --scene blind_curve --sample 20
 ```
 
 ### 多场景并发评估
 
 ```bash
-python flows/multi_scene_flow.py --scenes blind_curve waitzone_left --sample 20
+python3 flows/multi_scene_flow.py --scenes blind_curve waitzone_left --sample 20
 ```
 
 ### 运行测试
 
 ```bash
-python3.12 -m pytest tests/ -v
+python3 -m pytest tests/ -v
 # 期望: 52 passed
 ```
+
+---
+
+## 从 ADW 下载视频
+
+使用 `scripts/download_adw_videos.py` 从 NIO ADW 平台下载任意 UUID 列表的视频：
+
+```bash
+# ADW 密码在 .env 中已配置，需加 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
+python3 scripts/download_adw_videos.py \
+    --uuid-file /path/to/uuids.txt \
+    --output-dir /path/to/output_dir \
+    --workers 6
+
+# 先测试 5 条
+python3 scripts/download_adw_videos.py \
+    --uuid-file data_uuid/bus_lane_true.txt \
+    --output-dir /tmp/test \
+    --sample 5 \
+    --workers 2
+```
+
+**常用参数**：
+
+| 参数 | 必填 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--uuid-file` | ✓ | UUID 列表（每行一个，`#` 注释行忽略） | - |
+| `--output-dir` | ✓ | 输出根目录 | - |
+| `--camera` | | 相机名称 | `Front30` |
+| `--workers` | | 并发数 | `6` |
+| `--sample N` | | 仅处理前 N 条（测试用） | - |
+
+输出格式兼容 `local_loader`：`{output_dir}/{uuid}/{uuid}_{camera}.mp4`
+
+> 视频会被重新编码为 720p H264（约 1-2 MB），以满足 DashScope API 限制。
 
 ---
 

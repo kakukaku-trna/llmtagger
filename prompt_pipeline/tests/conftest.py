@@ -86,7 +86,7 @@ def scene_yaml(tmp_path) -> Path:
             "total_pipeline_max": 30000,
             "alert_threshold": 0.8,
         },
-        "alerts": {"feishu_webhook": None, "email": None},
+        "alerts": {"email": None},
     }
     yaml_file = tmp_path / "test_scene.yaml"
     with open(yaml_file, "w", encoding="utf-8") as f:

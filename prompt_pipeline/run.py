@@ -6,11 +6,21 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 # Allow running from the llmtagger/ directory without installing
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Auto-load .env from the project root (keys already in env take precedence)
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 from pipeline.config import load_scene
 from pipeline.data.local_loader import load_samples
@@ -40,11 +50,15 @@ def load_prompt(scene_cfg, version: str) -> str:
     return p.read_text(encoding="utf-8")
 
 
+# 飞书告警 webhook — 硬编码，无需配置
+FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/2e1e6058-0122-442b-9dfb-6e97506c8014"
+
+
 def _alert(scene_cfg, level, event, detail, **kw):
     """Wrapper that always injects feishu_webhook and email from scene config."""
     emit_alert(
         level, event, detail,
-        feishu_webhook=scene_cfg.alerts.feishu_webhook,
+        feishu_webhook=FEISHU_WEBHOOK,
         email=scene_cfg.alerts.email,
         **kw,
     )
@@ -90,7 +104,7 @@ def run_single(args: argparse.Namespace) -> None:
     runner = BatchRunner(
         config=scene_cfg.inference,
         tracker=tracker,
-        feishu_webhook=scene_cfg.alerts.feishu_webhook,
+        feishu_webhook=FEISHU_WEBHOOK,
         alert_email=scene_cfg.alerts.email,
     )
 
@@ -124,7 +138,7 @@ def run_iterate(args: argparse.Namespace) -> None:
     runner = BatchRunner(
         config=scene_cfg.inference,
         tracker=tracker,
-        feishu_webhook=scene_cfg.alerts.feishu_webhook,
+        feishu_webhook=FEISHU_WEBHOOK,
         alert_email=scene_cfg.alerts.email,
     )
 

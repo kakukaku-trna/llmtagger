@@ -65,7 +65,6 @@ class TokenBudget:
 
 @dataclass
 class AlertConfig:
-    feishu_webhook: Optional[str] = None
     email: Optional[str] = None
 
 
@@ -211,7 +210,6 @@ def _load_token_budget(d: dict) -> TokenBudget:
 
 def _load_alerts(d: dict) -> AlertConfig:
     return AlertConfig(
-        feishu_webhook=_resolve_env(d.get("feishu_webhook")),
         email=_resolve_env(d.get("email")),
     )
 
