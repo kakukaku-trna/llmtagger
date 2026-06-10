@@ -72,10 +72,11 @@ def generate_next_prompt(
         fn_cases=fn_text if fn_text else "（无）",
     )
 
-    client = OpenAI(api_key=config.api_key, base_url=config.api_base)
+    client = OpenAI(api_key=config.api_key, base_url=config.api_base, timeout=120)
     resp = client.chat.completions.create(
         model=config.model,
         temperature=0.3,
+        extra_body={"enable_thinking": False},
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT.format(topk=topk)},
             {"role": "user", "content": user_msg},

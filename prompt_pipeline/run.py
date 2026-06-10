@@ -25,6 +25,7 @@ if _env_file.exists():
 from pipeline.config import load_scene
 from pipeline.data.local_loader import load_samples
 from pipeline.evaluate.metrics import (
+    best_version,
     calc_metrics,
     load_all_versions,
     print_metrics_report,
@@ -122,6 +123,20 @@ def run_single(args: argparse.Namespace) -> None:
         print_versions_table(all_versions)
 
 
+def _print_best_prompt(scene_cfg, version: str, metrics) -> None:
+    """Print the best-performing prompt when the iteration target is not reached."""
+    sep = "═" * 55
+    print(f"\n{sep}")
+    print(f"  未达到目标 (P>={scene_cfg.target.precision}%  R>={scene_cfg.target.recall}%)")
+    print(f"  最佳版本: {version}  —  P={metrics.precision:.1f}%  R={metrics.recall:.1f}%  F1={metrics.f1:.1f}%")
+    print(f"{sep}")
+    prompt_path = scene_cfg.prompt_path(version)
+    if prompt_path.exists():
+        print(f"\n  >>> 推荐使用 {version} (路径: {prompt_path})\n")
+        print(prompt_path.read_text(encoding="utf-8"))
+    print(sep)
+
+
 # ─────────────────────────────────────────────────────────────
 def run_iterate(args: argparse.Namespace) -> None:
     """Run iterative prompt improvement loop."""
@@ -129,7 +144,9 @@ def run_iterate(args: argparse.Namespace) -> None:
     version = args.version or scene_cfg.latest_prompt_version()
     prompt = load_prompt(scene_cfg, version)
     max_rounds = args.max_rounds or scene_cfg.iteration.max_rounds
-    samples = load_samples(scene_cfg.data, sample_size=args.sample)
+    # CLI --sample takes precedence; fall back to yaml eval_sample_size
+    sample_size = args.sample or scene_cfg.iteration.eval_sample_size
+    samples = load_samples(scene_cfg.data, sample_size=sample_size)
 
     print(f"\n LLMTagger (迭代模式)  场景={args.scene}  版本={version}  最大轮次={max_rounds}")
     print(f"  样本数={len(samples)}  目标: P>={scene_cfg.target.precision}%  R>={scene_cfg.target.recall}%\n")
@@ -144,8 +161,10 @@ def run_iterate(args: argparse.Namespace) -> None:
 
     no_improvement = 0
     best_f1 = -1.0
+    best_version_name = version
     current_version = version
     current_prompt = prompt
+    target_reached = False
 
     for round_n in range(1, max_rounds + 1):
         print(f"\n{'─'*50}")
@@ -169,6 +188,7 @@ def run_iterate(args: argparse.Namespace) -> None:
 
         # Target reached
         if metrics.meets_target(scene_cfg.target.precision, scene_cfg.target.recall):
+            target_reached = True
             _alert(
                 scene_cfg, AlertLevel.INFO,
                 "达到评估目标",
@@ -178,9 +198,10 @@ def run_iterate(args: argparse.Namespace) -> None:
             )
             break
 
-        # Early stop: no improvement
-        if metrics.f1 > best_f1:
+        # Track best version (F1 primary, recall tiebreaker)
+        if metrics.f1 > best_f1 or (metrics.f1 == best_f1 and metrics.recall > 0):
             best_f1 = metrics.f1
+            best_version_name = current_version
             no_improvement = 0
         else:
             no_improvement += 1
@@ -225,7 +246,12 @@ def run_iterate(args: argparse.Namespace) -> None:
     # Final comparison table
     all_versions = load_all_versions(scene_cfg.metrics_path())
     if len(all_versions) > 1:
-        print_versions_table(all_versions)
+        if target_reached:
+            print_versions_table(all_versions)
+        else:
+            best_ver, best_m = best_version(all_versions)
+            print_versions_table(all_versions, highlight=best_ver)
+            _print_best_prompt(scene_cfg, best_ver, best_m)
 
 
 # ─────────────────────────────────────────────────────────────

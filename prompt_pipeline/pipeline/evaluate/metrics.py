@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from pipeline.inference.dashscope_client import InferResult
 
@@ -121,12 +121,32 @@ def print_metrics_report(metrics: Metrics, version: str = "", scene: str = "") -
     print(f"{'='*55}\n")
 
 
-def print_versions_table(all_versions: Dict[str, Metrics]) -> None:
-    """Print a comparison table of all prompt versions."""
+def best_version(all_versions: Dict[str, Metrics]) -> Tuple[str, Metrics]:
+    """Return the version with the best metrics.
+
+    Ranking: highest F1 first; tiebreak by recall (harder to achieve).
+    """
+    return max(
+        all_versions.items(),
+        key=lambda kv: (kv[1].f1, kv[1].recall),
+    )
+
+
+def print_versions_table(
+    all_versions: Dict[str, Metrics],
+    highlight: Optional[str] = None,
+) -> None:
+    """Print a comparison table of all prompt versions.
+
+    Args:
+        all_versions: version → Metrics mapping.
+        highlight: version name to mark with ★ in the table.
+    """
     if not all_versions:
         return
-    print(f"\n{'版本':<8} {'Precision':>10} {'Recall':>8} {'F1':>8} {'Tokens':>10}")
-    print("-" * 50)
+    print(f"\n{'版本':<10} {'Precision':>10} {'Recall':>8} {'F1':>8} {'Tokens':>10}")
+    print("-" * 52)
     for ver, m in sorted(all_versions.items()):
-        print(f"{ver:<8} {m.precision:>9.1f}% {m.recall:>7.1f}% {m.f1:>7.1f}% {m.tokens_used:>10,}")
+        marker = " ★" if ver == highlight else "  "
+        print(f"{ver:<8}{marker} {m.precision:>9.1f}% {m.recall:>7.1f}% {m.f1:>7.1f}% {m.tokens_used:>10,}")
     print()
