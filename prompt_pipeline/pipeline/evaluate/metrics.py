@@ -24,11 +24,27 @@ class Metrics:
     failed: int = 0
     tokens_used: int = 0
 
-    def meets_target(self, precision_target: float, recall_target: float) -> bool:
-        return self.precision >= precision_target and self.recall >= recall_target
+    def meets_target(
+        self,
+        precision_target: float,
+        recall_target: float,
+        accuracy_target: float = 0.0,
+    ) -> bool:
+        """Return True when all configured targets are met.
+
+        accuracy_target = 0 means the accuracy target is not enforced.
+        """
+        ok = self.recall >= recall_target and self.precision >= precision_target
+        if accuracy_target > 0:
+            ok = ok and self.accuracy >= accuracy_target
+        return ok
+
+    def opt_score(self) -> float:
+        """Primary optimisation score: recall + accuracy (equal weight)."""
+        return self.recall + self.accuracy
 
     def better_than(self, other: "Metrics") -> bool:
-        return self.f1 > other.f1
+        return self.opt_score() > other.opt_score()
 
 
 def calc_metrics(results: List[InferResult], tokens_used: int = 0) -> Metrics:
@@ -112,23 +128,20 @@ def print_metrics_report(metrics: Metrics, version: str = "", scene: str = "") -
     print(f" {header}")
     print(f"{'='*55}")
     print(f" 混淆矩阵:  TP={metrics.TP}  FP={metrics.FP}  FN={metrics.FN}  TN={metrics.TN}")
-    print(f" 精确率 Precision : {metrics.precision:.1f}%")
-    print(f" 召回率 Recall    : {metrics.recall:.1f}%")
+    print(f" 准确率 Accuracy  : {metrics.accuracy:.1f}%")    # primary
+    print(f" 召回率 Recall    : {metrics.recall:.1f}%")      # primary
+    print(f" 精确率 Precision : {metrics.precision:.1f}%")   # secondary
     print(f" F1 Score         : {metrics.f1:.1f}%")
-    print(f" 准确率 Accuracy  : {metrics.accuracy:.1f}%")
     print(f" 样本总数: {metrics.total}  成功: {metrics.success}  失败: {metrics.failed}")
     print(f" Token 消耗: {metrics.tokens_used:,}")
     print(f"{'='*55}\n")
 
 
 def best_version(all_versions: Dict[str, Metrics]) -> Tuple[str, Metrics]:
-    """Return the version with the best metrics.
-
-    Ranking: highest F1 first; tiebreak by recall (harder to achieve).
-    """
+    """Return the version with the best accuracy + recall (primary), precision (tiebreaker)."""
     return max(
         all_versions.items(),
-        key=lambda kv: (kv[1].f1, kv[1].recall),
+        key=lambda kv: (kv[1].opt_score(), kv[1].recall, kv[1].accuracy, kv[1].precision),
     )
 
 
@@ -138,15 +151,17 @@ def print_versions_table(
 ) -> None:
     """Print a comparison table of all prompt versions.
 
-    Args:
-        all_versions: version → Metrics mapping.
-        highlight: version name to mark with ★ in the table.
+    Columns ordered by importance: Accuracy, Recall (primary), Precision, F1 (secondary).
+    highlight: version name to mark with ★.
     """
     if not all_versions:
         return
-    print(f"\n{'版本':<10} {'Precision':>10} {'Recall':>8} {'F1':>8} {'Tokens':>10}")
-    print("-" * 52)
+    print(f"\n{'版本':<10} {'Accuracy':>9} {'Recall':>8} {'Precision':>10} {'F1':>8} {'Tokens':>10}")
+    print("-" * 61)
     for ver, m in sorted(all_versions.items()):
         marker = " ★" if ver == highlight else "  "
-        print(f"{ver:<8}{marker} {m.precision:>9.1f}% {m.recall:>7.1f}% {m.f1:>7.1f}% {m.tokens_used:>10,}")
+        print(
+            f"{ver:<8}{marker} {m.accuracy:>8.1f}% {m.recall:>7.1f}%"
+            f" {m.precision:>9.1f}% {m.f1:>7.1f}% {m.tokens_used:>10,}"
+        )
     print()

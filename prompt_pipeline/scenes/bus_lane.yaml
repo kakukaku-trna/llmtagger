@@ -5,7 +5,7 @@ version: 1.0
 data:
   mode: local
   positive_dir: /home/huajiang.sun/model_muse/bus_lane_pos
-  negative_dir: ""   # 暂无负样本，仅测 recall；若需完整 P/R/F1 请补充负样本目录
+  negative_dir: /home/huajiang.sun/model_muse/bus_lane_neg
 
 inference:
   engine: dashscope
@@ -19,12 +19,13 @@ inference:
   api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
 
 target:
-  precision: 85
-  recall: 85
+  accuracy: 85   # 主要指标：整体分类正确率
+  recall: 80     # 主要指标：不漏报
+  precision: 90  # 次要指标：不误报
 
 iteration:
-  max_rounds: 3
-  eval_sample_size: 50
+  max_rounds: 5
+  eval_sample_size: 38   # 19 负样本 + 19 正样本，保持 1:1 平衡
   full_eval_on_final: true
   improve_topk: 3
   early_stop:
@@ -32,9 +33,9 @@ iteration:
     token_budget_exceeded: true
 
 token_budget:
-  per_sample_max: 3000
-  total_per_round_max: 300000
-  total_pipeline_max: 900000
+  per_sample_max: 25000        # qwen3.7-plus 实测每条约 20k tokens（含 thinking）
+  total_per_round_max: 4000000 # 150 条 × 25k = 3.75M，留 buffer
+  total_pipeline_max: 12000000 # 3 轮迭代上限
   alert_threshold: 0.8
 
 alerts:

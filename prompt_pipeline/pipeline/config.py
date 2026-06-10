@@ -38,6 +38,7 @@ class InferenceConfig:
 class TargetConfig:
     precision: float = 80.0
     recall: float = 75.0
+    accuracy: float = 0.0  # 0 = not enforced
 
 
 @dataclass
@@ -182,6 +183,7 @@ def _load_target(d: dict) -> TargetConfig:
     return TargetConfig(
         precision=float(d.get("precision", 80.0)),
         recall=float(d.get("recall", 75.0)),
+        accuracy=float(d.get("accuracy", 0.0)),
     )
 
 

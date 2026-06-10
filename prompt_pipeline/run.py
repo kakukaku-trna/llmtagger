@@ -90,6 +90,15 @@ def _check_budget(tracker: TokenTracker, scene_cfg, scene: str, round_n: int) ->
     return False
 
 
+def _target_desc(scene_cfg) -> str:
+    """Human-readable target string."""
+    t = scene_cfg.target
+    parts = [f"Accuracy>={t.accuracy}%" if t.accuracy > 0 else None,
+             f"Recall>={t.recall}%",
+             f"Precision>={t.precision}%"]
+    return "  ".join(p for p in parts if p)
+
+
 # ─────────────────────────────────────────────────────────────
 def run_single(args: argparse.Namespace) -> None:
     """Run a single evaluation round without iteration."""
@@ -125,10 +134,13 @@ def run_single(args: argparse.Namespace) -> None:
 
 def _print_best_prompt(scene_cfg, version: str, metrics) -> None:
     """Print the best-performing prompt when the iteration target is not reached."""
-    sep = "═" * 55
+    sep = "═" * 58
+    acc_str = f"  Accuracy>={scene_cfg.target.accuracy}%" if scene_cfg.target.accuracy > 0 else ""
     print(f"\n{sep}")
-    print(f"  未达到目标 (P>={scene_cfg.target.precision}%  R>={scene_cfg.target.recall}%)")
-    print(f"  最佳版本: {version}  —  P={metrics.precision:.1f}%  R={metrics.recall:.1f}%  F1={metrics.f1:.1f}%")
+    print(f"  未达到目标 ({_target_desc(scene_cfg)})")
+    print(f"  最佳版本: {version}"
+          f"  —  Accuracy={metrics.accuracy:.1f}%  Recall={metrics.recall:.1f}%"
+          f"  Precision={metrics.precision:.1f}%")
     print(f"{sep}")
     prompt_path = scene_cfg.prompt_path(version)
     if prompt_path.exists():
@@ -149,7 +161,7 @@ def run_iterate(args: argparse.Namespace) -> None:
     samples = load_samples(scene_cfg.data, sample_size=sample_size)
 
     print(f"\n LLMTagger (迭代模式)  场景={args.scene}  版本={version}  最大轮次={max_rounds}")
-    print(f"  样本数={len(samples)}  目标: P>={scene_cfg.target.precision}%  R>={scene_cfg.target.recall}%\n")
+    print(f"  样本数={len(samples)}  目标: {_target_desc(scene_cfg)}\n")
 
     tracker = TokenTracker(scene_cfg.token_budget)
     runner = BatchRunner(
@@ -160,7 +172,7 @@ def run_iterate(args: argparse.Namespace) -> None:
     )
 
     no_improvement = 0
-    best_f1 = -1.0
+    best_score = -1.0      # recall + accuracy
     best_version_name = version
     current_version = version
     current_prompt = prompt
@@ -187,20 +199,25 @@ def run_iterate(args: argparse.Namespace) -> None:
             break
 
         # Target reached
-        if metrics.meets_target(scene_cfg.target.precision, scene_cfg.target.recall):
+        if metrics.meets_target(
+            scene_cfg.target.precision,
+            scene_cfg.target.recall,
+            scene_cfg.target.accuracy,
+        ):
             target_reached = True
             _alert(
                 scene_cfg, AlertLevel.INFO,
                 "达到评估目标",
-                f"P={metrics.precision:.1f}%  R={metrics.recall:.1f}%  F1={metrics.f1:.1f}%",
+                f"Accuracy={metrics.accuracy:.1f}%  Recall={metrics.recall:.1f}%  Precision={metrics.precision:.1f}%",
                 scene=args.scene,
                 progress=f"{round_n}/{max_rounds}",
             )
             break
 
-        # Track best version (F1 primary, recall tiebreaker)
-        if metrics.f1 > best_f1 or (metrics.f1 == best_f1 and metrics.recall > 0):
-            best_f1 = metrics.f1
+        # Track best version by recall + accuracy (primary optimisation goal)
+        score = metrics.opt_score()
+        if score > best_score:
+            best_score = score
             best_version_name = current_version
             no_improvement = 0
         else:
@@ -235,7 +252,12 @@ def run_iterate(args: argparse.Namespace) -> None:
                 from_version=current_version,
                 new_version=next_ver,
                 failures=failures,
-                metrics_delta={"f1": metrics.f1, "precision": metrics.precision, "recall": metrics.recall},
+                metrics_delta={
+                    "accuracy": metrics.accuracy,
+                    "recall": metrics.recall,
+                    "precision": metrics.precision,
+                    "f1": metrics.f1,
+                },
             )
             print(f"  新版本 {next_ver} 已保存 → {scene_cfg.prompt_path(next_ver)}")
             current_version = next_ver
