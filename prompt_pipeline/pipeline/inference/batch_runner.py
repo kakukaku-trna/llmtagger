@@ -1,4 +1,5 @@
 """Batch inference runner. Adapted from detect_blind_curve.py two-stage parallel pattern."""
+
 from __future__ import annotations
 
 import json
@@ -10,8 +11,13 @@ from typing import Callable, Dict, List, Optional
 
 from pipeline.config import InferenceConfig
 from pipeline.data.local_loader import Sample
-from pipeline.inference.dashscope_client import DashScopeClient, InferResult, _encode_video
+from pipeline.inference.dashscope_client import (
+    DashScopeClient,
+    InferResult,
+    _encode_video,
+)
 from pipeline.monitor.alert import AlertLevel, emit_alert
+from pipeline.monitor.raw_log import RawLogWriter
 from pipeline.monitor.token_tracker import TokenTracker
 
 
@@ -24,12 +30,13 @@ def build_client(config: InferenceConfig):
     """Factory: return the appropriate inference client."""
     if config.engine == "vllm":
         from pipeline.inference.vllm_client import VLLMClient
+
         return VLLMClient(config)
     return DashScopeClient(config)
 
 
 class BatchRunner:
-    """Runs batch inference with caching, timeout detection, and token tracking."""
+    """Runs batch inference with caching, timeout detection, token tracking, and raw-response logging."""
 
     def __init__(
         self,
@@ -38,12 +45,14 @@ class BatchRunner:
         tracker: Optional[TokenTracker] = None,
         feishu_webhook: Optional[str] = None,
         alert_email: Optional[str] = None,
+        log_writer: Optional[RawLogWriter] = None,
     ):
         self._config = config
         self._cache_path = cache_path
         self._tracker = tracker or TokenTracker()
         self._feishu_webhook = feishu_webhook
         self._alert_email = alert_email
+        self._log_writer = log_writer
         self._cache: Dict[str, InferResult] = {}
         self._cache_lock = threading.Lock()
 
@@ -56,14 +65,24 @@ class BatchRunner:
         samples: List[Sample],
         prompt: str,
         infer_fn: Optional[Callable] = None,
+        *,
+        scene: str = "",
+        version: str = "",
+        round_n: int = 0,
     ) -> List[InferResult]:
         """Run inference on all samples. Returns list of InferResult."""
+        self._scene = scene
+        self._version = version
+        self._round_n = round_n
+
         if infer_fn is None:
             client = build_client(self._config)
             infer_fn = lambda s: client.infer(s, prompt)  # noqa: E731
 
         # Split into cached and pending
-        cached = [self._cache[s.video_path] for s in samples if s.video_path in self._cache]
+        cached = [
+            self._cache[s.video_path] for s in samples if s.video_path in self._cache
+        ]
         pending = [s for s in samples if s.video_path not in self._cache]
 
         if cached:
@@ -83,7 +102,9 @@ class BatchRunner:
         return all_results
 
     # ─────────────────────────────────────────────────────────
-    def _run_parallel(self, samples: List[Sample], infer_fn: Callable) -> List[InferResult]:
+    def _run_parallel(
+        self, samples: List[Sample], infer_fn: Callable
+    ) -> List[InferResult]:
         results: List[InferResult] = []
         consecutive_timeouts = 0
 
@@ -91,7 +112,9 @@ class BatchRunner:
             future_map = {pool.submit(infer_fn, s): s for s in samples}
             for future in as_completed(future_map):
                 try:
-                    r: InferResult = future.result(timeout=self._config.timeout_per_sample + 5)
+                    r: InferResult = future.result(
+                        timeout=self._config.timeout_per_sample + 5
+                    )
                     if r.elapsed > self._config.timeout_per_sample:
                         consecutive_timeouts += 1
                     else:
@@ -110,6 +133,13 @@ class BatchRunner:
                     self._save_to_cache(r)
                     results.append(r)
                     self._print_result(r)
+                    if self._log_writer:
+                        self._log_writer.write(
+                            r,
+                            scene=self._scene,
+                            version=self._version,
+                            round_n=self._round_n,
+                        )
                 except Exception as e:
                     s = future_map[future]
                     r = InferResult(
@@ -125,6 +155,13 @@ class BatchRunner:
                         error=str(e),
                     )
                     results.append(r)
+                    if self._log_writer:
+                        self._log_writer.write(
+                            r,
+                            scene=self._scene,
+                            version=self._version,
+                            round_n=self._round_n,
+                        )
 
         return results
 
@@ -147,11 +184,15 @@ class BatchRunner:
 
     @staticmethod
     def _print_result(r: InferResult):
-        correct = ("✓" if r.result == r.label else "✗") if r.status == "success" else " "
+        correct = (
+            ("✓" if r.result == r.label else "✗") if r.status == "success" else " "
+        )
         name = Path(r.video_path).name
         print(f"  [{correct}] {name}")
-        print(f"       标签={r.label}  预测={r.result}  "
-              f"耗时={r.elapsed:.1f}s  tok={r.total_tokens}")
+        print(
+            f"       标签={r.label}  预测={r.result}  "
+            f"耗时={r.elapsed:.1f}s  tok={r.total_tokens}"
+        )
         if r.status != "success":
             print(f"       错误: {r.error[:100]}")
 

@@ -1,4 +1,5 @@
 """DashScope API inference client. Adapted from detect_blind_curve.py."""
+
 from __future__ import annotations
 
 import base64
@@ -18,14 +19,15 @@ from pipeline.data.local_loader import Sample
 class InferResult:
     video_path: str
     label: str
-    result: str         # "是" | "否" | ""
+    result: str  # "是" | "否" | ""
     reason: str
-    status: str         # success | parse_error | failed
+    status: str  # success | parse_error | failed
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
     elapsed: float
     error: str = ""
+    raw_response: str = ""
 
 
 class DashScopeClient:
@@ -39,6 +41,7 @@ class DashScopeClient:
     def infer(self, sample: Sample, prompt: str) -> InferResult:
         """Run inference on a single video sample."""
         import datetime
+
         t0 = datetime.datetime.now()
 
         out = InferResult(
@@ -57,6 +60,7 @@ class DashScopeClient:
             b64 = _encode_video(sample.video_path)
             raw, pt, ct = self._call_api(b64, prompt)
             result, reason = _parse_response(raw)
+            out.raw_response = raw  # 保存原始响应文本
             out.result = result
             out.reason = reason
             out.status = "success"
@@ -65,6 +69,7 @@ class DashScopeClient:
             out.total_tokens = pt + ct
         except (json.JSONDecodeError, ValueError) as e:
             out.status = "parse_error"
+            out.raw_response = raw  # 即使解析失败也保存原始响应
             out.error = str(e)
         except Exception as e:
             out.error = str(e)
@@ -85,17 +90,21 @@ class DashScopeClient:
                         "enable_thinking": True,
                         "thinking_budget": cfg.thinking_budget,
                     },
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "video_url",
-                                "video_url": {"url": f"data:video/mp4;base64,{b64}"},
-                                "fps": cfg.fps,
-                            },
-                            {"type": "text", "text": prompt},
-                        ],
-                    }],
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "video_url",
+                                    "video_url": {
+                                        "url": f"data:video/mp4;base64,{b64}"
+                                    },
+                                    "fps": cfg.fps,
+                                },
+                                {"type": "text", "text": prompt},
+                            ],
+                        }
+                    ],
                 )
                 content = completion.choices[0].message.content
                 if not content or not content.strip():
@@ -133,6 +142,12 @@ def _parse_response(content: str) -> Tuple[str, str]:
     data = json.loads(match.group(0))
     result = data.get("result", "")
     # Normalize English yes/no to Chinese
-    result = {"yes": "是", "Yes": "是", "YES": "是",
-              "no": "否", "No": "否", "NO": "否"}.get(result, result)
+    result = {
+        "yes": "是",
+        "Yes": "是",
+        "YES": "是",
+        "no": "否",
+        "No": "否",
+        "NO": "否",
+    }.get(result, result)
     return result, data.get("reason", "")

@@ -1,4 +1,5 @@
 """Evaluation metrics: precision, recall, F1, confusion matrix. Persists to metrics.json."""
+
 from __future__ import annotations
 
 import json
@@ -44,7 +45,7 @@ class Metrics:
         return self.recall + self.accuracy
 
     def better_than(self, other: "Metrics") -> bool:
-        return self.opt_score() > other.opt_score()
+        return self.f1 > other.f1
 
 
 def calc_metrics(results: List[InferResult], tokens_used: int = 0) -> Metrics:
@@ -67,7 +68,11 @@ def calc_metrics(results: List[InferResult], tokens_used: int = 0) -> Metrics:
     total = tp + fp + tn + fn
     precision = tp / (tp + fp) * 100 if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) * 100 if (tp + fn) > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if (precision + recall) > 0
+        else 0.0
+    )
     accuracy = (tp + tn) / total * 100 if total > 0 else 0.0
 
     # Sum tokens from results if not provided
@@ -75,7 +80,10 @@ def calc_metrics(results: List[InferResult], tokens_used: int = 0) -> Metrics:
         tokens_used = sum(r.total_tokens for r in results)
 
     return Metrics(
-        TP=tp, FP=fp, TN=tn, FN=fn,
+        TP=tp,
+        FP=fp,
+        TN=tn,
+        FN=fn,
         precision=round(precision, 1),
         recall=round(recall, 1),
         f1=round(f1, 1),
@@ -124,24 +132,33 @@ def load_all_versions(metrics_path: Path) -> Dict[str, Metrics]:
 
 def print_metrics_report(metrics: Metrics, version: str = "", scene: str = "") -> None:
     header = f"场景: {scene}  版本: {version}" if (scene or version) else "评估结果"
-    print(f"\n{'='*55}")
+    print(f"\n{'=' * 55}")
     print(f" {header}")
-    print(f"{'='*55}")
-    print(f" 混淆矩阵:  TP={metrics.TP}  FP={metrics.FP}  FN={metrics.FN}  TN={metrics.TN}")
-    print(f" 准确率 Accuracy  : {metrics.accuracy:.1f}%")    # primary
-    print(f" 召回率 Recall    : {metrics.recall:.1f}%")      # primary
-    print(f" 精确率 Precision : {metrics.precision:.1f}%")   # secondary
+    print(f"{'=' * 55}")
+    print(
+        f" 混淆矩阵:  TP={metrics.TP}  FP={metrics.FP}  FN={metrics.FN}  TN={metrics.TN}"
+    )
+    print(f" 准确率 Accuracy  : {metrics.accuracy:.1f}%")  # primary
+    print(f" 召回率 Recall    : {metrics.recall:.1f}%")  # primary
+    print(f" 精确率 Precision : {metrics.precision:.1f}%")  # secondary
     print(f" F1 Score         : {metrics.f1:.1f}%")
-    print(f" 样本总数: {metrics.total}  成功: {metrics.success}  失败: {metrics.failed}")
+    print(
+        f" 样本总数: {metrics.total}  成功: {metrics.success}  失败: {metrics.failed}"
+    )
     print(f" Token 消耗: {metrics.tokens_used:,}")
-    print(f"{'='*55}\n")
+    print(f"{'=' * 55}\n")
 
 
 def best_version(all_versions: Dict[str, Metrics]) -> Tuple[str, Metrics]:
     """Return the version with the best accuracy + recall (primary), precision (tiebreaker)."""
     return max(
         all_versions.items(),
-        key=lambda kv: (kv[1].opt_score(), kv[1].recall, kv[1].accuracy, kv[1].precision),
+        key=lambda kv: (
+            kv[1].opt_score(),
+            kv[1].recall,
+            kv[1].accuracy,
+            kv[1].precision,
+        ),
     )
 
 
@@ -156,7 +173,9 @@ def print_versions_table(
     """
     if not all_versions:
         return
-    print(f"\n{'版本':<10} {'Accuracy':>9} {'Recall':>8} {'Precision':>10} {'F1':>8} {'Tokens':>10}")
+    print(
+        f"\n{'版本':<10} {'Accuracy':>9} {'Recall':>8} {'Precision':>10} {'F1':>8} {'Tokens':>10}"
+    )
     print("-" * 61)
     for ver, m in sorted(all_versions.items()):
         marker = " ★" if ver == highlight else "  "

@@ -1,4 +1,5 @@
 """Local vLLM inference client. Uses file:// URL to avoid base64 overhead."""
+
 from __future__ import annotations
 
 import json
@@ -21,6 +22,7 @@ class VLLMClient:
 
     def infer(self, sample: Sample, prompt: str) -> InferResult:
         import datetime
+
         t0 = datetime.datetime.now()
 
         out = InferResult(
@@ -38,6 +40,7 @@ class VLLMClient:
         try:
             raw, pt, ct = self._call_api(sample.video_path, prompt)
             result, reason = _parse_response(raw)
+            out.raw_response = raw  # 保存原始响应文本
             out.result = result
             out.reason = reason
             out.status = "success"
@@ -46,6 +49,7 @@ class VLLMClient:
             out.total_tokens = pt + ct
         except (json.JSONDecodeError, ValueError) as e:
             out.status = "parse_error"
+            out.raw_response = raw  # 即使解析失败也保存原始响应
             out.error = str(e)
         except Exception as e:
             out.error = str(e)
@@ -59,23 +63,34 @@ class VLLMClient:
             "model": cfg.model,
             "temperature": 0.0,
             "max_tokens": 512,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "video_url", "video_url": {"url": f"file://{video_path}"}},
-                    {"type": "text", "text": prompt},
-                ],
-            }],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "video_url",
+                            "video_url": {"url": f"file://{video_path}"},
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
         }
         last_err = ""
         for attempt in range(1, cfg.max_retries + 1):
             try:
-                resp = requests.post(cfg.vllm_url, json=payload, timeout=cfg.timeout_per_sample)
+                resp = requests.post(
+                    cfg.vllm_url, json=payload, timeout=cfg.timeout_per_sample
+                )
                 resp.raise_for_status()
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
                 usage = data.get("usage", {})
-                return content, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+                return (
+                    content,
+                    usage.get("prompt_tokens", 0),
+                    usage.get("completion_tokens", 0),
+                )
             except Exception as e:
                 last_err = str(e)
                 if attempt < cfg.max_retries:
