@@ -53,14 +53,16 @@ def load_prompt(scene_cfg, version: str) -> str:
 
 # 飞书告警 webhook — 硬编码，无需配置
 FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/2e1e6058-0122-442b-9dfb-6e97506c8014"
+FEISHU_MENTION_ID = os.environ.get("FEISHU_MENTION_ID", "all")
 
 
 def _alert(scene_cfg, level, event, detail, **kw):
-    """Wrapper that always injects feishu_webhook and email from scene config."""
+    """Wrapper that always injects feishu_webhook, mention_id and email from scene config."""
     emit_alert(
         level, event, detail,
         feishu_webhook=FEISHU_WEBHOOK,
         email=scene_cfg.alerts.email,
+        mention_id=FEISHU_MENTION_ID,
         **kw,
     )
 
@@ -172,7 +174,7 @@ def run_iterate(args: argparse.Namespace) -> None:
     )
 
     no_improvement = 0
-    best_score = -1.0      # recall + accuracy
+    best_score = -1.0      # recall + precision
     best_version_name = version
     current_version = version
     current_prompt = prompt
@@ -214,7 +216,7 @@ def run_iterate(args: argparse.Namespace) -> None:
             )
             break
 
-        # Track best version by recall + accuracy (primary optimisation goal)
+        # Track best version by recall + precision (primary optimisation goal)
         score = metrics.opt_score()
         if score > best_score:
             best_score = score

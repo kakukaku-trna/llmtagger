@@ -1,4 +1,4 @@
-"""Local file data loader. Discovers videos from positive/negative directories."""
+"""Local file data loader. Discovers videos or frame sets from positive/negative directories."""
 from __future__ import annotations
 
 import glob
@@ -12,9 +12,39 @@ from pipeline.config import DataConfig
 
 @dataclass
 class Sample:
-    video_path: str
-    label: str      # "是" for positive, "否" for negative
-    uuid: str       # derived from directory name or filename
+    video_path: str     # primary media path (mp4 or representative frame path)
+    label: str          # "是" for positive, "否" for negative
+    uuid: str           # derived from directory name or filename
+
+
+def _discover_media(directory: str) -> List[str]:
+    """Recursively discover all media under directory.
+
+    Returns:
+        - For frame sets (frame_*.jpg): the parent directory path
+          (DashScope client auto-detects frame_*.jpg inside)
+        - For MP4: the .mp4 file path directly
+    Frame mode takes priority over MP4 in the same directory.
+    """
+    root = Path(directory)
+    media: List[str] = []
+    seen: set = set()
+
+    # 1. Frame mode first: find directories containing frame_*.jpg
+    for jpg in sorted(root.rglob("frame_*.jpg")):
+        dir_ = jpg.parent
+        if dir_ not in seen:
+            media.append(str(dir_))
+            seen.add(dir_)
+
+    # 2. MP4 mode: find .mp4 files whose parent dir is not already in frame mode
+    for mp4 in sorted(glob.glob(str(root / "**" / "*.mp4"), recursive=True)):
+        parent = Path(mp4).parent
+        if parent not in seen:
+            media.append(mp4)
+            seen.add(parent)
+
+    return media
 
 
 def find_mp4s(directory: str) -> List[str]:
@@ -53,16 +83,20 @@ def load_samples(
 def _load_dir(directory: str, label: str) -> List[Sample]:
     if not directory or not Path(directory).exists():
         return []
+    items = _discover_media(directory)
     return [
         Sample(
             video_path=p,
             label=label,
             uuid=_extract_uuid(p),
         )
-        for p in find_mp4s(directory)
+        for p in items
     ]
 
 
 def _extract_uuid(video_path: str) -> str:
-    """Extract UUID from path: use parent directory name."""
-    return Path(video_path).parent.name
+    """Extract UUID from path: use parent directory name or directory itself."""
+    p = Path(video_path)
+    if p.is_dir():
+        return p.name
+    return p.parent.name

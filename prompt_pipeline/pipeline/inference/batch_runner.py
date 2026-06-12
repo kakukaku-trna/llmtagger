@@ -148,7 +148,8 @@ class BatchRunner:
     @staticmethod
     def _print_result(r: InferResult):
         correct = ("✓" if r.result == r.label else "✗") if r.status == "success" else " "
-        name = Path(r.video_path).name
+        p = Path(r.video_path)
+        name = p.name if p.is_file() else f"{p.name} (frames)"
         print(f"  [{correct}] {name}")
         print(f"       标签={r.label}  预测={r.result}  "
               f"耗时={r.elapsed:.1f}s  tok={r.total_tokens}")

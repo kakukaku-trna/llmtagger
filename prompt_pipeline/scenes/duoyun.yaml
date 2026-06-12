@@ -1,0 +1,40 @@
+name: duoyun
+display_name: 多云检测
+
+data:
+  mode: local
+  positive_dir: /home/huajiang.sun/data/多云
+  negative_dir: /home/huajiang.sun/data/晴天
+
+inference:
+  engine: dashscope
+  model: qwen3.7-plus
+  workers: 5
+  timeout_per_sample: 60
+  fps: 2
+  thinking_budget: 512
+  max_retries: 3
+  api_key: ${DASHSCOPE_API_KEY}
+  api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+target:
+  recall: 85
+  precision: 85
+
+iteration:
+  max_rounds: 5
+  eval_sample_size: 60
+  full_eval_on_final: true
+  improve_topk: 3
+  early_stop:
+    no_improvement_rounds: 2
+    token_budget_exceeded: true
+
+token_budget:
+  per_sample_max: 25000
+  total_per_round_max: 4000000
+  total_pipeline_max: 15000000
+  alert_threshold: 0.8
+
+alerts:
+  email: huajiang.sun@nio.com

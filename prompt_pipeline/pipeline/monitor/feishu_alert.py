@@ -32,6 +32,7 @@ def send_feishu_alert(
     title: str,
     body: str,
     fields: Optional[Dict[str, str]] = None,
+    mention_id: Optional[str] = None,
 ) -> bool:
     """POST a card message to a Feishu webhook.
 
@@ -41,7 +42,7 @@ def send_feishu_alert(
     import json
     try:
         import urllib.request
-        payload = _build_card(level, title, body, fields or {})
+        payload = _build_card(level, title, body, fields or {}, mention_id=mention_id)
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             webhook,
@@ -67,6 +68,7 @@ def _build_card(
     title: str,
     body: str,
     fields: Dict[str, str],
+    mention_id: Optional[str] = None,
 ) -> dict:
     color, prefix = level.value
     elements = [
@@ -90,6 +92,17 @@ def _build_card(
             "flex_mode": "none",
             "background_style": "grey",
             "columns": field_elems[:4],   # Feishu supports max 4 columns
+        })
+    if mention_id:
+        if mention_id == "all":
+            mention_text = "提交者：<at all=\"true\">所有人</at>"
+        elif mention_id.startswith("ou_"):
+            mention_text = f"提交者：<at id=\"{mention_id}\"></at>"
+        else:
+            mention_text = f"提交者：{mention_id}"
+        elements.append({
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": mention_text},
         })
     return {
         "msg_type": "interactive",

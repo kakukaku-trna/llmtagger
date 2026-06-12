@@ -6,7 +6,8 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Tuple
+from pathlib import Path
+from typing import List, Tuple
 
 from openai import OpenAI
 
@@ -37,7 +38,7 @@ class DashScopeClient:
         )
 
     def infer(self, sample: Sample, prompt: str) -> InferResult:
-        """Run inference on a single video sample."""
+        """Run inference on a single video or image set."""
         import datetime
         t0 = datetime.datetime.now()
 
@@ -54,8 +55,13 @@ class DashScopeClient:
         )
 
         try:
-            b64 = _encode_video(sample.video_path)
-            raw, pt, ct = self._call_api(b64, prompt)
+            # Detect frame mode: if frame_*.jpg exist alongside the video path
+            frame_paths = _find_frames(sample.video_path)
+            if frame_paths:
+                raw, pt, ct = self._call_api_with_frames(frame_paths, prompt)
+            else:
+                b64 = _encode_video(sample.video_path)
+                raw, pt, ct = self._call_api(b64, prompt)
             result, reason = _parse_response(raw)
             out.result = result
             out.reason = reason
@@ -73,7 +79,7 @@ class DashScopeClient:
         return out
 
     def _call_api(self, b64: str, prompt: str) -> Tuple[str, int, int]:
-        """Call DashScope API with retries. Returns (content, prompt_tokens, completion_tokens)."""
+        """Video mode: call DashScope API with a single video."""
         cfg = self._config
         last_err = ""
         for attempt in range(1, cfg.max_retries + 1):
@@ -109,6 +115,60 @@ class DashScopeClient:
                 if attempt < cfg.max_retries:
                     time.sleep(2)
         raise RuntimeError(f"API failed after {cfg.max_retries} retries: {last_err}")
+
+    def _call_api_with_frames(self, frame_paths: List[Path], prompt: str) -> Tuple[str, int, int]:
+        """Frame mode: send multiple high-res JPEG images to DashScope."""
+        cfg = self._config
+        content: List[dict] = [
+            {"type": "text", "text": f"以下是从同一段行车视频中提取的 {len(frame_paths)} 帧图像，请综合分析它们来判断。"}
+        ]
+        # Add all frames as image_url
+        for fp in sorted(frame_paths):
+            b64 = _encode_image(str(fp))
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+            })
+        content.append({"type": "text", "text": prompt})
+
+        last_err = ""
+        for attempt in range(1, cfg.max_retries + 1):
+            try:
+                completion = self._client.chat.completions.create(
+                    model=cfg.model,
+                    temperature=0.0,
+                    extra_body={
+                        "enable_thinking": True,
+                        "thinking_budget": cfg.thinking_budget,
+                    },
+                    messages=[{"role": "user", "content": content}],
+                )
+                result = completion.choices[0].message.content
+                if not result or not result.strip():
+                    raise ValueError("API returned empty content")
+                usage = completion.usage
+                pt = usage.prompt_tokens if usage else 0
+                ct = usage.completion_tokens if usage else 0
+                return result, pt, ct
+            except Exception as e:
+                last_err = str(e)
+                if attempt < cfg.max_retries:
+                    time.sleep(2)
+        raise RuntimeError(f"API failed after {cfg.max_retries} retries: {last_err}")
+
+
+def _find_frames(video_path: str) -> List[Path]:
+    """Detect frame mode: return list of frame_*.jpg in the same directory."""
+    p = Path(video_path)
+    dir_ = p if p.is_dir() else p.parent
+    frames = sorted(dir_.glob("frame_*.jpg"))
+    return frames
+
+
+def _encode_image(image_path: str) -> str:
+    """Base64-encode an image file."""
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
 
 
 def _encode_video(video_path: str) -> str:
