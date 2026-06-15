@@ -1,0 +1,72 @@
+{
+  "v1": {
+    "TP": 25,
+    "FP": 19,
+    "TN": 11,
+    "FN": 5,
+    "precision": 56.8,
+    "recall": 83.3,
+    "f1": 67.6,
+    "accuracy": 60.0,
+    "total": 60,
+    "success": 60,
+    "failed": 0,
+    "tokens_used": 578851
+  },
+  "v2": {
+    "TP": 26,
+    "FP": 18,
+    "TN": 12,
+    "FN": 4,
+    "precision": 59.1,
+    "recall": 86.7,
+    "f1": 70.3,
+    "accuracy": 63.3,
+    "total": 60,
+    "success": 60,
+    "failed": 0,
+    "tokens_used": 575722
+  },
+  "v3": {
+    "TP": 24,
+    "FP": 18,
+    "TN": 12,
+    "FN": 6,
+    "precision": 57.1,
+    "recall": 80.0,
+    "f1": 66.7,
+    "accuracy": 60.0,
+    "total": 60,
+    "success": 60,
+    "failed": 0,
+    "tokens_used": 576810
+  },
+  "v4": {
+    "TP": 30,
+    "FP": 20,
+    "TN": 10,
+    "FN": 0,
+    "precision": 60.0,
+    "recall": 100.0,
+    "f1": 75.0,
+    "accuracy": 66.7,
+    "total": 60,
+    "success": 60,
+    "failed": 0,
+    "tokens_used": 576269
+  },
+  "v5": {
+    "TP": 30,
+    "FP": 20,
+    "TN": 10,
+    "FN": 0,
+    "precision": 60.0,
+    "recall": 100.0,
+    "f1": 75.0,
+    "accuracy": 66.7,
+    "total": 60,
+    "success": 60,
+    "failed": 0,
+    "tokens_used": 578492
+  }
+}

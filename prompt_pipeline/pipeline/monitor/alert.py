@@ -27,6 +27,7 @@ def emit_alert(
     token_budget: int = 0,
     feishu_webhook: Optional[str] = None,
     email: Optional[str] = None,
+    mention_id: Optional[str] = None,
 ) -> None:
     """Emit a structured alert to all configured channels."""
     _print_alert(level, event, detail, scene, progress, tokens_used, token_budget)
@@ -42,7 +43,7 @@ def emit_alert(
     fields["时间"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if feishu_webhook:
-        _send_feishu(feishu_webhook, level, event, detail, fields)
+        _send_feishu(feishu_webhook, level, event, detail, fields, mention_id)
 
     if email:
         _send_email(email, level, event, detail, fields)
@@ -75,7 +76,7 @@ def _print_alert(level, event, detail, scene, progress, tokens_used, token_budge
 # Feishu
 # ─────────────────────────────────────────────────────────────
 
-def _send_feishu(webhook, level, event, detail, fields):
+def _send_feishu(webhook, level, event, detail, fields, mention_id):
     from pipeline.monitor.feishu_alert import FeishuLevel, send_feishu_alert
     mapping = {
         AlertLevel.INFO:    FeishuLevel.INFO,
@@ -88,6 +89,7 @@ def _send_feishu(webhook, level, event, detail, fields):
         title=event,
         body=detail,
         fields=fields,
+        mention_id=mention_id,
     )
     if ok:
         print(f"  ↗ 飞书告警已发送")

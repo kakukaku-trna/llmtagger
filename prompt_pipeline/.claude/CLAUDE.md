@@ -57,35 +57,50 @@ ADW_STG_PASS=G4IDTL2YJW
 
 使用通用下载脚本 `scripts/download_adw_videos.py`，支持任意 UUID 列表文件：
 
+**默认模式：提取高分辨率帧（推荐）**
+
 ```bash
-# 下载公交车道数据（ADW_PROD_PASS 从 .env 自动读取）
+# 下载并提取 5 帧高分辨率 JPEG（原生分辨率）
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
 python3 scripts/download_adw_videos.py \
     --uuid-file /home/huajiang.sun/公交车道-150clip.txt \
     --output-dir /home/huajiang.sun/model_muse/bus_lane_pos \
     --workers 6
 
-# 测试 5 条
+# 将已下载的 MP4 转为帧模式（保留 MP4）
 python3 scripts/download_adw_videos.py \
-    --uuid-file data_uuid/bus_lane_true.txt \
-    --output-dir /tmp/test_output \
-    --sample 5
+    --output-dir /home/huajiang.sun/data/晴天 \
+    --from-mp4 --frame-count 5 --keep-mp4
+
+# 将已下载的 MP4 转为帧模式（删除 MP4）
+python3 scripts/download_adw_videos.py \
+    --output-dir /home/huajiang.sun/data/晴天 \
+    --from-mp4 --frame-count 5
+
+# 旧模式：720p H264 MP4 视频
+python3 scripts/download_adw_videos.py \
+    --uuid-file /home/huajiang.sun/公交车道-150clip.txt \
+    --output-dir /home/huajiang.sun/model_muse/bus_lane_pos \
+    --mp4 --workers 6
 ```
 
-**输出格式**（local_loader 兼容）：
-```
-{output_dir}/{uuid}/{uuid}_{camera}.mp4
-```
+**输出格式**：
+- 帧模式（默认）：`{output_dir}/{uuid}/frame_01.jpg ... frame_05.jpg` + `_meta.json`
+- MP4 模式（`--mp4`）：`{output_dir}/{uuid}/{uuid}_{camera}.mp4`
 
 ### 下载脚本参数
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--uuid-file` | UUID 列表文本文件（必填） | - |
+| `--uuid-file` | UUID 列表文本文件（下载模式必填，--from-mp4 不需要） | - |
 | `--output-dir` | 输出目录（必填） | - |
 | `--camera` | 相机名称 | `Front30` |
 | `--workers` | 并发数 | `6` |
 | `--sample` | 只处理前 N 条（测试用） | - |
+| `--frame-count` | 每个视频提取帧数 | `5` |
+| `--mp4` | 使用旧的 720p MP4 模式（而非帧提取） | 关闭 |
+| `--from-mp4` | 从已有 MP4 文件提取帧（不下载） | 关闭 |
+| `--keep-mp4` | 提取帧后保留原始 MP4 文件 | 关闭 |
 | `--adw-user` | ADW 用户名 | `$ADW_USER` |
 | `--adw-prod-pass` | ADW 生产密码 | `$ADW_PROD_PASS` |
 

@@ -99,8 +99,10 @@ class TokenTracker:
     def table_row(self, scene: str, round_n: int) -> str:
         with self._lock:
             rt = self._round_usage.total
-            pt = self._pipeline_usage.total
-        cost = pt / 1_000_000 * 2.0   # rough estimate ¥2/1M tokens
+            in_tok = self._pipeline_usage.prompt_tokens
+            out_tok = self._pipeline_usage.completion_tokens
+        # qwen3.7-plus: input ¥2/M, output ¥8/M
+        cost = in_tok / 1_000_000 * 2.0 + out_tok / 1_000_000 * 8.0
         return f"{scene:<20} | {round_n:>4} | {rt:>10,} | ¥{cost:.2f}"
 
 
