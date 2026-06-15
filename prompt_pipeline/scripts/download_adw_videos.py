@@ -61,9 +61,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# ── 配置 ─────────────────────────────────────────────────────────────────────
-
-DEFAULT_CAMERA = "Front30"
+# ── configuration ─────────────────────────────────────────────────────────────
+# Park_Front/Park_Rear/Park_Right/Park_Left/Front120/Front30/Rear/SideView_FR/SideView_FL/SideView_RR/SideView_RL
+DEFAULT_CAMERA = "Front120"
 ENCODE_CRF = "38"
 ENCODE_SCALE = "1280:720"
 
