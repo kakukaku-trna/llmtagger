@@ -1,0 +1,42 @@
+name: backlighting
+display_name: 逆光检测 (backlighting Detection)
+version: 1.0
+
+data:
+  mode: local
+  positive_dir: /home/tuoyu.yang/LLM/backlighting_pos
+  negative_dir: /home/tuoyu.yang/LLM/day_pos
+
+inference:
+  engine: dashscope
+  model: qwen3.7-plus
+  workers: 5
+  timeout_per_sample: 60
+  fps: 2
+  thinking_budget: 512
+  max_retries: 3
+  api_key: ${DASHSCOPE_API_KEY}
+  api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+target:
+  accuracy: 85   # 次要指标：整体分类正确率
+  recall: 80     # 主要指标：不漏报
+  precision: 90  # 主要指标：不误报
+
+iteration:
+  max_rounds: 5
+  eval_sample_size: 294   #  144 负样本 + 150 正样本
+  full_eval_on_final: true
+  improve_topk: 3
+  early_stop:
+    no_improvement_rounds: 2
+    token_budget_exceeded: true
+
+token_budget:
+  per_sample_max: 25000        # qwen3.7-plus 实测每条约 20k tokens（含 thinking）
+  total_per_round_max: 4000000 # 150 条 × 25k = 3.75M，留 buffer
+  total_pipeline_max: 12000000 # 3 轮迭代上限
+  alert_threshold: 0.8
+
+alerts:
+  email: tuoyu.yang@nio.com
