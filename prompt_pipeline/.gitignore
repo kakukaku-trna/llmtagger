@@ -7,3 +7,7 @@ prompts/*/metrics.json
 prompts/*/history.json
 logs/
 *.log
+
+# BEV generation outputs
+batch_bev_log.json
+*.mp4
