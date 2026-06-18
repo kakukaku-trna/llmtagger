@@ -56,7 +56,9 @@ def load_prompt(scene_cfg, version: str) -> str:
 # 飞书告警 webhook — 硬编码，无需配置
 # 原始响应日志根目录
 LOGS_DIR = Path(__file__).parent / "logs"
-FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/2e1e6058-0122-442b-9dfb-6e97506c8014"
+FEISHU_WEBHOOK = (
+    "https://open.feishu.cn/open-apis/bot/v2/hook/2e1e6058-0122-442b-9dfb-6e97506c8014"
+)
 FEISHU_MENTION_ID = os.environ.get("FEISHU_MENTION_ID", "all")
 
 
@@ -117,7 +119,9 @@ def run_single(args: argparse.Namespace) -> None:
     scene_cfg = load_scene(args.scene)
     version = args.version or scene_cfg.latest_prompt_version()
     prompt = load_prompt(scene_cfg, version)
-    samples = load_samples(scene_cfg.data, sample_size=args.sample)
+    samples = load_samples(
+        scene_cfg.data, sample_size=args.sample, camera_suffix=args.camera
+    )
 
     print(f"\n LLMTagger  场景={args.scene}  版本={version}  样本数={len(samples)}")
     print(
@@ -182,7 +186,9 @@ def run_iterate(args: argparse.Namespace) -> None:
     max_rounds = args.max_rounds or scene_cfg.iteration.max_rounds
     # CLI --sample takes precedence; fall back to yaml eval_sample_size
     sample_size = args.sample or scene_cfg.iteration.eval_sample_size
-    samples = load_samples(scene_cfg.data, sample_size=sample_size)
+    samples = load_samples(
+        scene_cfg.data, sample_size=sample_size, camera_suffix=args.camera
+    )
 
     print(
         f"\n LLMTagger (迭代模式)  场景={args.scene}  版本={version}  最大轮次={max_rounds}"
@@ -202,7 +208,7 @@ def run_iterate(args: argparse.Namespace) -> None:
     )
 
     no_improvement = 0
-    best_score = -1.0      # recall + precision
+    best_score = -1.0  # recall + precision
     best_version_name = version
     current_version = version
     current_prompt = prompt
@@ -334,6 +340,12 @@ def main():
     )
     parser.add_argument(
         "--max-rounds", type=int, default=None, help="Max iteration rounds"
+    )
+
+    parser.add_argument(
+        "--camera",
+        default=None,
+        help="Only process files ending with this camera name (suffix match)",
     )
 
     args = parser.parse_args()
