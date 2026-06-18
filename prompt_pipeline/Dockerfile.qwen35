@@ -1,0 +1,60 @@
+FROM nvidia/cuda:12.2.2-cudnn9-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    TRANSFORMERS_NO_ADVISORY_WARNINGS=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    git \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 \
+    build-essential \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+# PyTorch first: use cu121 wheels for broader driver compatibility on 535.x hosts.
+RUN python3 -m pip install \
+    torch==2.6.0 \
+    torchvision==0.21.0 \
+    torchaudio==2.6.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Qwen3.5 serving stack: prefer a clean Transformers-based OpenAI-compatible server.
+RUN python3 -m pip install \
+    "transformers[serving] @ git+https://github.com/huggingface/transformers.git@main" \
+    accelerate==1.6.0 \
+    python-dotenv==1.1.0 \
+    requests==2.32.3 \
+    pillow>=10.0.0 \
+    numpy>=1.24.0 \
+    opencv-python-headless \
+    "qwen-vl-utils[decord]==0.0.14" \
+    "mistral_common>=1.11.3"
+
+# Project layout is kept consistent with the current absolute paths used by scripts.
+WORKDIR /home/huajiang.sun/llmtagger/prompt_pipeline
+COPY requirements.txt ./requirements.txt
+RUN python3 -m pip install -r requirements.txt
+COPY . .
+
+RUN mkdir -p \
+    /data-algorithm/model_cache/Qwen \
+    /home/huajiang.sun/data \
+    /tmp/eval_vllm_tmp
+
+COPY docker/serve_qwen35.sh /usr/local/bin/serve_qwen35.sh
+RUN chmod +x /usr/local/bin/serve_qwen35.sh
+
+EXPOSE 8001
+
+CMD ["/usr/local/bin/serve_qwen35.sh"]

@@ -1,0 +1,126 @@
+{
+  "公交车道": {
+    "TP": 4,
+    "FP": 1,
+    "TN": 368,
+    "FN": 21,
+    "positives_in_gt": 25,
+    "precision": 80.0,
+    "recall": 16.0,
+    "f1": 26.7
+  },
+  "双向单车道": {
+    "TP": 25,
+    "FP": 69,
+    "TN": 300,
+    "FN": 0,
+    "positives_in_gt": 25,
+    "precision": 26.6,
+    "recall": 100.0,
+    "f1": 42.0
+  },
+  "前方左转待转区": {
+    "TP": 6,
+    "FP": 6,
+    "TN": 363,
+    "FN": 19,
+    "positives_in_gt": 25,
+    "precision": 50.0,
+    "recall": 24.0,
+    "f1": 32.4
+  },
+  "逆光": {
+    "TP": 0,
+    "FP": 18,
+    "TN": 351,
+    "FN": 25,
+    "positives_in_gt": 25,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "炫光": {
+    "TP": 0,
+    "FP": 18,
+    "TN": 351,
+    "FN": 25,
+    "positives_in_gt": 25,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "强反射": {
+    "TP": 5,
+    "FP": 24,
+    "TN": 345,
+    "FN": 20,
+    "positives_in_gt": 25,
+    "precision": 17.2,
+    "recall": 20.0,
+    "f1": 18.5
+  },
+  "光影": {
+    "TP": 18,
+    "FP": 21,
+    "TN": 349,
+    "FN": 6,
+    "positives_in_gt": 24,
+    "precision": 46.2,
+    "recall": 75.0,
+    "f1": 57.1
+  },
+  "道路积雪": {
+    "TP": 47,
+    "FP": 1,
+    "TN": 343,
+    "FN": 3,
+    "positives_in_gt": 50,
+    "precision": 97.9,
+    "recall": 94.0,
+    "f1": 95.9
+  },
+  "天气": {
+    "accuracy": 68.3,
+    "correct": 99,
+    "total": 145,
+    "confusion": {
+      "雪天→雪天": 24,
+      "雾天→雾天": 22,
+      "雨天→雨天": 20,
+      "晴天→晴天": 16,
+      "阴天→阴天": 15,
+      "多云→阴天": 9,
+      "多云→雨天": 6,
+      "晴天→阴天": 5,
+      "雨天→阴天": 5,
+      "阴天→多云": 4,
+      "晴天→多云": 3,
+      "阴天→雨天": 3,
+      "阴天→晴天": 3,
+      "多云→晴天": 3,
+      "雾天→雪天": 2,
+      "多云→多云": 2,
+      "晴天→雨天": 1,
+      "雾天→晴天": 1,
+      "雪天→雨天": 1
+    }
+  },
+  "时段": {
+    "accuracy": 96.7,
+    "correct": 116,
+    "total": 120
+  },
+  "_summary": {
+    "total_clips": 395,
+    "parsed_ok": 394,
+    "failed_or_parse_error": 1
+  },
+  "cost": {
+    "input_tokens": 6194108,
+    "output_tokens": 247957,
+    "total_tokens": 6442065,
+    "cost_cny": 21.56,
+    "clips_ok": 394,
+    "clips_failed": 1
+  }
+}

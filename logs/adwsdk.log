@@ -1,0 +1,5 @@
+[2026-06-11 01:16:33,735] [40249:139835293742208] [ERROR] [adw_client.py: 194L]: scan failed:Traceback (most recent call last):
+  File "/home/huajiang.sun/.local/lib/python3.12/site-packages/adwsdk/adw_client.py", line 190, in scan
+    raise self.AdwScanFailed(scan_result.errMessage)
+adwsdk.adw_client.AdwClient.AdwScanFailed: permission denied, user dayun.shen has no permission: READ on datafilter/check/result
+
