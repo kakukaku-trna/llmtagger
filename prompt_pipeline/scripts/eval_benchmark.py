@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -44,8 +45,8 @@ from pipeline.inference.dashscope_client import (
 from pipeline.monitor.token_tracker import TokenTracker
 
 # ── paths ─────────────────────────────────────────────────────────────────────
-CSV_PATH   = Path("/home/huajiang.sun/data/eval_benchmark.csv")
-VIDEOS_DIR = Path("/home/huajiang.sun/data/eval_videos")
+CSV_PATH_DEFAULT = Path("/home/huajiang.sun/data/eval_benchmark.csv")
+VIDEO_ROOT_DEFAULT = Path("/data-algorithm/huajiang.sun/eval_videos")
 PROMPTS_DIR = ROOT / "prompts/eval_benchmark"
 
 # ── labels ────────────────────────────────────────────────────────────────────
@@ -54,6 +55,7 @@ BINARY_LABELS = [
     "前方左转待转区", "逆光", "炫光", "强反射", "光影", "道路积雪",
 ]
 ALL_LABELS = ["天气", "时段"] + BINARY_LABELS
+REQUIRED_COLUMNS = ["clip_id", *ALL_LABELS]
 
 # ── qwen3.7-plus pricing (DashScope, 2025) ────────────────────────────────────
 INPUT_PRICE_PER_1K  = 0.002   # ¥/1K tokens
@@ -317,10 +319,51 @@ class MultiLabelVLLMClient:
 # ─────────────────────────────────────────────────────────────────────────────
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
-def load_ground_truth() -> dict[str, dict]:
+def _pick_best_media(paths: list[Path]) -> Path:
+    def _rank(path: Path) -> tuple[int, int, str]:
+        name = path.name
+        camera_rank = 2
+        if "_Front120" in name:
+            camera_rank = 0
+        elif "_Front30" in name:
+            camera_rank = 1
+        try:
+            size_rank = -path.stat().st_size
+        except OSError:
+            size_rank = 0
+        return (camera_rank, size_rank, name)
+
+    return sorted(paths, key=_rank)[0]
+
+
+def _index_media(video_root: Path) -> dict[str, list[Path]]:
+    media_by_clip: dict[str, list[Path]] = defaultdict(list)
+    if not video_root.exists():
+        return media_by_clip
+
+    for mp4 in video_root.rglob("*.mp4"):
+        media_by_clip[mp4.parent.name].append(mp4)
+
+    # Support pre-extracted frame directories if they exist under the same root.
+    for frame in video_root.rglob("frame_*.jpg"):
+        clip_dir = frame.parent
+        if clip_dir not in media_by_clip[clip_dir.name]:
+            media_by_clip[clip_dir.name].append(clip_dir)
+
+    return media_by_clip
+
+
+def load_ground_truth(csv_path: Path) -> dict[str, dict]:
     gt: dict[str, dict] = {}
-    with open(CSV_PATH, encoding="utf-8") as f:
-        for row in csv.DictReader(f):
+    with open(csv_path, encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        headers = list(reader.fieldnames or [])
+        missing_headers = [col for col in REQUIRED_COLUMNS if col not in headers]
+        if missing_headers:
+            raise RuntimeError(
+                f"CSV missing required columns: {missing_headers} (path={csv_path})"
+            )
+        for row in reader:
             cid = row["clip_id"]
             labels = {}
             for col in ALL_LABELS:
@@ -330,18 +373,23 @@ def load_ground_truth() -> dict[str, dict]:
     return gt
 
 
-def build_samples(gt: dict, sample_n: int | None = None) -> list[Sample]:
+def build_samples(
+    gt: dict,
+    video_root: Path,
+    sample_n: int | None = None,
+) -> tuple[list[Sample], list[str]]:
     clip_ids = list(gt.keys())
     if sample_n:
         clip_ids = clip_ids[:sample_n]
 
+    media_index = _index_media(video_root)
     samples, missing = [], []
     for cid in clip_ids:
-        clip_dir = VIDEOS_DIR / cid
-        mp4s = sorted(clip_dir.glob("*.mp4")) if clip_dir.exists() else []
-        if mp4s:
+        media_paths = media_index.get(cid, [])
+        if media_paths:
+            media_path = _pick_best_media(media_paths)
             samples.append(Sample(
-                video_path=str(mp4s[0]),
+                video_path=str(media_path),
                 label=json.dumps(gt[cid], ensure_ascii=False),
                 uuid=cid,
             ))
@@ -350,7 +398,7 @@ def build_samples(gt: dict, sample_n: int | None = None) -> list[Sample]:
 
     if missing:
         print(f"[WARN] {len(missing)} clips missing MP4: {missing[:3]}...")
-    return samples
+    return samples, missing
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -458,11 +506,15 @@ def estimate_cost(results: list[InferResult]) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # CSV output
 # ─────────────────────────────────────────────────────────────────────────────
-def save_predictions_csv(results: list[InferResult], out_path: Path):
-    """Write a CSV with clip_id + all predicted labels."""
+def save_predictions_csv(results: list[InferResult], gt: dict, out_path: Path):
+    """Write a CSV with clip_id + ground truth + predicted labels."""
     rows = []
     for r in results:
-        row = {"clip_id": _clip_id(r), "status": r.status}
+        clip_id = _clip_id(r)
+        row = {"clip_id": clip_id, "status": r.status}
+        truth = gt.get(clip_id, {})
+        for label in ALL_LABELS:
+            row[f"gt_{label}"] = truth.get(label, "")
         if r.status == "success":
             try:
                 pred = json.loads(r.result)
@@ -541,7 +593,9 @@ def main():
     ap = argparse.ArgumentParser(description="Multi-label eval for eval_benchmark.csv")
     ap.add_argument("--sample",   type=int, default=None, help="only run first N clips (for testing)")
     ap.add_argument("--workers",  type=int, default=5)
-    ap.add_argument("--version",  default="v10")
+    ap.add_argument("--version",  default="v11")
+    ap.add_argument("--csv-path", default=str(CSV_PATH_DEFAULT))
+    ap.add_argument("--video-root", default=str(VIDEO_ROOT_DEFAULT))
     ap.add_argument("--engine",     default="dashscope", choices=["dashscope", "vllm", "qwen35"])
     ap.add_argument("--vllm-url",   default="http://localhost:8000/v1/chat/completions")
     ap.add_argument("--vllm-model", default="qwen2.5-vl-7b-instruct")
@@ -554,20 +608,34 @@ def main():
     args = ap.parse_args()
 
     version      = args.version
+    csv_path     = Path(args.csv_path)
+    video_root   = Path(args.video_root)
     cache_path   = PROMPTS_DIR / f"cache_{version}.json"
     results_path = PROMPTS_DIR / f"results_{version}.json"
     metrics_path = PROMPTS_DIR / f"eval_metrics_{version}.json"
     prompt_path  = PROMPTS_DIR / f"{version}.md"
 
-    print(f"Loading ground truth from {CSV_PATH} ...")
-    gt = load_ground_truth()
+    print(f"Loading ground truth from {csv_path} ...")
+    gt = load_ground_truth(csv_path)
     print(f"  {len(gt)} clips")
 
+    if not prompt_path.exists():
+        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
     prompt = prompt_path.read_text(encoding="utf-8")
     print(f"Loaded prompt  : {len(prompt)} chars  ({prompt_path.name})")
 
-    samples = build_samples(gt, sample_n=args.sample)
+    print(f"Video root     : {video_root}")
+    samples, missing = build_samples(gt, video_root=video_root, sample_n=args.sample)
     print(f"Built {len(samples)} samples")
+    if not samples:
+        raise RuntimeError(
+            f"No samples resolved under video_root={video_root}. "
+            f"Check whether clip directories exist for the CSV rows."
+        )
+    if missing and args.sample and len(missing) == args.sample:
+        raise RuntimeError(
+            f"The first {args.sample} CSV rows could not be resolved under {video_root}."
+        )
 
     if args.engine == "vllm":
         cfg = InferenceConfig(
@@ -642,7 +710,7 @@ def main():
     )
 
     predictions_csv = PROMPTS_DIR / f"predictions_{version}.csv"
-    save_predictions_csv(results, predictions_csv)
+    save_predictions_csv(results, gt, predictions_csv)
     print(f"Metrics      → {metrics_path}")
 
     print_report(metrics, cost, version)

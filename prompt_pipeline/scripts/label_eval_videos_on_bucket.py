@@ -66,6 +66,72 @@ PREFERRED_LABEL_ORDER = [
 FINAL_STATUSES = {'success', 'failed'}
 
 
+class IntranetOnBucketChat(OnBucketChat):
+    """share-global 内网 COS 桶专用 OnBucketChat。
+
+    原生 OnBucketChat 在 __init__ 中会拒绝 region 为 hefei/huailai 的桶
+    (非公有云)。share-global 虽然 region='huailai'，但实际上 advibe 后台
+    在公司内网，可访问 cos.nads3-hl.nioint.com 内网地址。
+
+    用法：和 OnBucketChat 完全一致，只需替换类即可。
+    """
+
+    def __init__(
+        self,
+        bucket: str,
+        niofs_ak: str,
+        niofs_sk: str,
+        user_name: str | None = None,
+        api_key: str | None = None,
+        prompt: str | None = '',
+        model_name: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        reasoning_effort: str | None = None,
+        model_extra_params: dict | None = None,
+        fps: int | None = None,
+    ) -> None:
+        # 跳过父类会抛异常的 region 检查，直接走底层逻辑
+        from advibe_sdk.config import AdvibeConfig
+        from advibe_sdk.base_chat import BaseChat
+        self.config = AdvibeConfig()
+
+        self.user_name = user_name if user_name else self.config.user_name
+        if not self.user_name:
+            raise ValueError('user_name not set')
+
+        self.api_key = api_key if api_key else self.config.api_key
+        if not self.api_key:
+            raise ValueError('api_key not set')
+
+        self.bucket = bucket
+        self.prompt = prompt
+        self.model_name = model_name if model_name else self.config.model_name
+        self.fps = fps
+
+        import niofs as _niofs
+        self.niofs_client = _niofs.Client(niofs_ak, niofs_sk)
+        self.base_chat = BaseChat(
+            user_name=self.user_name,
+            api_key=self.api_key,
+            prompt=prompt,
+            model_name=model_name,
+            temperature=temperature,
+            top_p=top_p,
+            reasoning_effort=reasoning_effort,
+            model_extra_params=model_extra_params,
+        )
+
+    def _generate_presigned_url(self, key: str, expiration: int = None) -> str:
+        """强制使用内网预签名 URL（internet=False）。"""
+        if expiration is None:
+            expiration = self.config.presign_url_timeout
+        logger.info('Generating intranet presigned URL for key: %s', key)
+        return self.niofs_client.generate_presigned_url(
+            self.bucket, key, expiration=expiration, internet=False
+        )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Batch-label eval videos via OnBucketChat background tasks.')
     parser.add_argument('--bucket', type=str, default=DEFAULT_BUCKET)
@@ -80,6 +146,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--fps', type=int, default=2)
     parser.add_argument('--submit-workers', type=int, default=4)
     parser.add_argument('--poll-interval', type=float, default=5.0)
+    parser.add_argument('--use-on-bucket', action='store_true',
+                        help='使用 IntranetOnBucketChat（SDK 封装的对象存储对话）。'
+                             '默认使用兼容模式：BaseChat + generate_presigned_url(internet=False)')
     parser.add_argument('--sample', type=int, default=0)
     parser.add_argument('--overwrite', action='store_true')
     parser.add_argument('--submit-only', action='store_true')
@@ -174,16 +243,36 @@ def discover_clips(niofs_client: niofs.Client, bucket: str, prefix: str) -> list
     return clips
 
 
-def submit_one(clip: dict[str, str], niofs_client: niofs.Client, base_chat: BaseChat,
-               query: str, fps: int) -> dict[str, Any]:
-    # 生成内网预签名 URL（advibe 后台在内网，可访问 share-global COS 内网地址）
+def submit_one_basechat(clip: dict[str, str], niofs_client: niofs.Client, base_chat: BaseChat,
+                        query: str, fps: int, bucket: str) -> dict[str, Any]:
+    """兼容模式：BaseChat + generate_presigned_url(internet=False)"""
     url = niofs_client.generate_presigned_url(
-        DEFAULT_BUCKET, clip['object_key'], expiration=12 * 3600, internet=False
+        bucket, clip['object_key'], expiration=12 * 3600, internet=False
     )
     video = VideoInput(url=url, fps=fps)
     task = base_chat.chat_background(
         query=query,
         video=video,
+        extra_info=clip['clip_id'],
+    )
+    return {
+        'clip_id': clip['clip_id'],
+        'object_key': clip['object_key'],
+        'task_id': task.task_id,
+        'submit_success': task.success,
+        'submit_status': task.status,
+        'submit_error': task.error_message,
+        'submitted_at': int(time.time()),
+    }
+
+
+def submit_one_onbucket(clip: dict[str, str], bucket_chat: IntranetOnBucketChat,
+                        query: str, fps: int) -> dict[str, Any]:
+    """SDK 模式：IntranetOnBucketChat + BucketVideo(key=...)"""
+    video = BucketVideo(key=clip['object_key'])
+    task = bucket_chat.chat_video_background(
+        query=query,
+        video_key=video,
         extra_info=clip['clip_id'],
     )
     return {
@@ -289,16 +378,6 @@ def main() -> int:
     print(f'discovered_clips={len(clips)} from {args.bucket}/{args.bucket_prefix}')
 
     if not args.poll_only:
-        base_chat = BaseChat(
-            user_name=args.user_name,
-            api_key=args.api_key,
-            prompt=prompt,
-            model_name=args.model_name,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            model_extra_params={'enable_thinking': True} if args.enable_thinking else None,
-        )
-
         to_submit = [
             c for c in clips
             if args.overwrite or c['clip_id'] not in tasks or not tasks[c['clip_id']].get('task_id')
@@ -306,11 +385,44 @@ def main() -> int:
         print(f'to_submit={len(to_submit)}')
 
         if to_submit:
+            # 初始化对话客户端：
+            # --use-on-bucket 时用 IntranetOnBucketChat，
+            # 否则用兼容模式 BaseChat + generate_presigned_url
+            if args.use_on_bucket:
+                print('mode=IntranetOnBucketChat')
+                chat_client = IntranetOnBucketChat(
+                    bucket=args.bucket,
+                    niofs_ak=NIOFS_AK,
+                    niofs_sk=NIOFS_SK,
+                    user_name=args.user_name,
+                    api_key=args.api_key,
+                    prompt=prompt,
+                    model_name=args.model_name,
+                    fps=args.fps,
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    model_extra_params={'enable_thinking': True} if args.enable_thinking else None,
+                )
+            else:
+                print('mode=BaseChat (BaseChat + presigned_url internet=False)')
+                chat_client = BaseChat(
+                    user_name=args.user_name,
+                    api_key=args.api_key,
+                    prompt=prompt,
+                    model_name=args.model_name,
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    model_extra_params={'enable_thinking': True} if args.enable_thinking else None,
+                )
+
             with ThreadPoolExecutor(max_workers=max(1, args.submit_workers)) as pool:
-                futures = {
-                    pool.submit(submit_one, clip, niofs_client, base_chat, args.query, args.fps): clip
-                    for clip in to_submit
-                }
+                futures: dict = {}
+                for clip in to_submit:
+                    if args.use_on_bucket:
+                        f = pool.submit(submit_one_onbucket, clip, chat_client, args.query, args.fps)
+                    else:
+                        f = pool.submit(submit_one_basechat, clip, niofs_client, chat_client, args.query, args.fps, args.bucket)
+                    futures[f] = clip
                 for future in as_completed(futures):
                     clip = futures[future]
                     try:

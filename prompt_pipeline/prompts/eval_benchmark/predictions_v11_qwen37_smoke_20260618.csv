@@ -1,0 +1,2 @@
+clip_id,status,gt_天气,gt_时段,gt_公交车道,gt_非机动车道,gt_路面积水,gt_双向单车道,gt_前方左转待转区,gt_逆光,gt_炫光,gt_强反射,gt_光影,gt_道路积雪,pred_天气,pred_时段,pred_公交车道,pred_非机动车道,pred_路面积水,pred_双向单车道,pred_前方左转待转区,pred_逆光,pred_炫光,pred_强反射,pred_光影,pred_道路积雪,reason
+b3420c50-e425-4d62-bcdd-05be306622a2,success,晴天,白天,,,,,,,,,,,晴天,白天,否,是,否,否,否,否,否,否,否,否,天气晴朗白天，路边有护栏分隔非机动车道，无积水积雪及特殊光照现象
