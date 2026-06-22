@@ -30,6 +30,7 @@ import requests
 
 DEFAULT_CAMERA = "Front30"
 ENCODE_CRF = "23"
+ENCODE_PRESET = "medium"
 ENCODE_SCALE = "1280:720"
 
 # DMS API configuration
@@ -133,7 +134,7 @@ def convert_to_mp4(src: Path, dest: Path) -> Tuple[bool, str]:
         "-crf",
         ENCODE_CRF,
         "-preset",
-        "veryfast",
+        ENCODE_PRESET,
         "-an",
         str(dest),
         "-y",

@@ -65,6 +65,7 @@ from typing import List, Optional, Tuple
 # Park_Front/Park_Rear/Park_Right/Park_Left/Front120/Front30/Rear/SideView_FR/SideView_FL/SideView_RR/SideView_RL
 DEFAULT_CAMERA = "Front120"
 ENCODE_CRF = "23"
+ENCODE_PRESET = "medium"
 ENCODE_SCALE = "1280:720"
 
 DLB_NAMESPACES = [
@@ -176,7 +177,7 @@ def convert_to_mp4(src: Path, dest: Path) -> bool:
         "-crf",
         ENCODE_CRF,
         "-preset",
-        "veryfast",
+        ENCODE_PRESET,
         "-an",
         str(dest),
         "-y",
@@ -743,7 +744,7 @@ def main():
         print(f"  Mode      : {mode_str}, {args.frame_count} frames per clip")
     else:
         print(
-            f"  Encoding  : scale={ENCODE_SCALE}, libx264 crf={ENCODE_CRF} preset=veryfast"
+            f"  Encoding  : scale={ENCODE_SCALE}, libx264 crf={ENCODE_CRF} preset={ENCODE_PRESET}"
         )
     print()
 
