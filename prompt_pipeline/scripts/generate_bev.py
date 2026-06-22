@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -108,6 +109,8 @@ def generate_bev(
     output_path: Path,
     fps: float = DEFAULT_FPS,
     codec: str = DEFAULT_CODEC,
+    crf: int = 23,
+    preset: str = "medium",
     config: Front120BevConfig | None = None,
     show_progress: bool = True,
 ) -> None:
@@ -118,7 +121,9 @@ def generate_bev(
         calib_path: Path to front_wide.json calibration.
         output_path: Output MP4 path.
         fps: Output frame rate.
-        codec: FourCC codec string.
+        codec: FourCC codec string (deprecated, kept for API compat).
+        crf: H.264 CRF quality (lower=better, 23 default).
+        preset: x264 encoding preset (default "medium").
         config: Optional BEV configuration overrides.
         show_progress: Print progress.
     """
@@ -141,50 +146,75 @@ def generate_bev(
     # Ensure parent directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Open writer
-    fourcc = cv2.VideoWriter_fourcc(*codec)
-    writer = cv2.VideoWriter(str(output_path), fourcc, fps, (bev_w, bev_h))
-    if not writer.isOpened():
-        writer = cv2.VideoWriter(
-            str(output_path),
-            cv2.VideoWriter_fourcc(*"XVID"),
-            fps,
-            (bev_w, bev_h),
-        )
-        if not writer.isOpened():
-            raise RuntimeError(f"Cannot open video writer: {output_path}")
+    # Start ffmpeg pipe for H.264 encoding
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "bgr24",
+        "-s",
+        f"{bev_w}x{bev_h}",
+        "-r",
+        str(fps),
+        "-i",
+        "-",
+        "-c:v",
+        "libx264",
+        "-crf",
+        str(crf),
+        "-preset",
+        preset,
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+        "-y",
+    ]
+    ffmpeg = subprocess.Popen(
+        ffmpeg_cmd,
+        stdin=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
     if show_progress:
         print(f"Processing {total_frames} frames: {video_path} -> {output_path}")
         print(f"  Video: {video_w}x{video_h}, BEV: {bev_w}x{bev_h}")
+        print(f"  Encoding: libx264 crf={crf} preset={preset}")
 
-    # Process frames
-    for frame_idx in range(total_frames):
-        ret, frame = cap.read()
-        if not ret or frame is None:
-            break
+    try:
+        # Process frames
+        for frame_idx in range(total_frames):
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                break
 
-        # Remap to BEV
-        bev_frame = cv2.remap(
-            frame,
-            rx,
-            ry,
-            interpolation=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=(0, 0, 0),
-        )
-
-        writer.write(bev_frame)
-
-        if show_progress and (frame_idx + 1) % 30 == 0:
-            pct = (frame_idx + 1) / total_frames * 100
-            print(
-                f"  {frame_idx + 1}/{total_frames} frames ({pct:.1f}%)",
-                flush=True,
+            # Remap to BEV
+            bev_frame = cv2.remap(
+                frame,
+                rx,
+                ry,
+                interpolation=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=(0, 0, 0),
             )
 
-    cap.release()
-    writer.release()
+            ffmpeg.stdin.write(bev_frame.tobytes())
+
+            if show_progress and (frame_idx + 1) % 30 == 0:
+                pct = (frame_idx + 1) / total_frames * 100
+                print(
+                    f"  {frame_idx + 1}/{total_frames} frames ({pct:.1f}%)",
+                    flush=True,
+                )
+    finally:
+        cap.release()
+        ffmpeg.stdin.close()
+        retcode = ffmpeg.wait()
+        if retcode != 0:
+            stderr = ffmpeg.stderr.read().decode()[-500:] if ffmpeg.stderr else ""
+            raise RuntimeError(f"ffmpeg failed (exit {retcode}): {stderr}")
 
     if show_progress:
         print(f"  Done: {output_path}")
@@ -244,7 +274,33 @@ def main() -> None:
         "--fps", type=float, default=DEFAULT_FPS, help="Output frame rate"
     )
     parser.add_argument(
-        "--codec", type=str, default=DEFAULT_CODEC, help="FourCC codec string"
+        "--codec",
+        type=str,
+        default=DEFAULT_CODEC,
+        help="FourCC codec string (deprecated)",
+    )
+    parser.add_argument(
+        "--crf",
+        type=int,
+        default=23,
+        help="H.264 CRF quality, lower=better (default: 23)",
+    )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default="medium",
+        choices=[
+            "ultrafast",
+            "superfast",
+            "veryfast",
+            "faster",
+            "fast",
+            "medium",
+            "slow",
+            "slower",
+            "veryslow",
+        ],
+        help="x264 encoding preset (default: medium)",
     )
 
     # BEV configuration
@@ -329,7 +385,16 @@ def main() -> None:
         bev_pitch_deg=args.bev_pitch_deg,
     )
 
-    generate_bev(video_path, calib_path, output_path, args.fps, args.codec, config)
+    generate_bev(
+        video_path,
+        calib_path,
+        output_path,
+        fps=args.fps,
+        codec=args.codec,
+        crf=args.crf,
+        preset=args.preset,
+        config=config,
+    )
 
 
 if __name__ == "__main__":

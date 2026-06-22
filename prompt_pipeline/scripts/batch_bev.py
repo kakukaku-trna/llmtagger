@@ -62,6 +62,8 @@ class TaskConfig(NamedTuple):
     calib_camera_name: str
     fps: float
     codec: str
+    crf: int
+    preset: str
     bev_config: Front120BevConfig
     fallback_calib: Path | None
     skip_existing: bool
@@ -109,6 +111,8 @@ def _process_single(config: TaskConfig) -> dict:
             output_path,
             fps=config.fps,
             codec=config.codec,
+            crf=config.crf,
+            preset=config.preset,
             config=config.bev_config,
             show_progress=False,
         )
@@ -200,7 +204,33 @@ def main() -> None:
         "--fps", type=float, default=DEFAULT_FPS, help="Output frame rate"
     )
     parser.add_argument(
-        "--codec", type=str, default=DEFAULT_CODEC, help="FourCC codec string"
+        "--codec",
+        type=str,
+        default=DEFAULT_CODEC,
+        help="FourCC codec string (deprecated)",
+    )
+    parser.add_argument(
+        "--crf",
+        type=int,
+        default=23,
+        help="H.264 CRF quality, lower=better (default: 23)",
+    )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default="medium",
+        choices=[
+            "ultrafast",
+            "superfast",
+            "veryfast",
+            "faster",
+            "fast",
+            "medium",
+            "slow",
+            "slower",
+            "veryslow",
+        ],
+        help="x264 encoding preset (default: medium)",
     )
 
     # BEV configuration
@@ -285,6 +315,8 @@ def main() -> None:
             calib_camera_name=args.calib_camera_name,
             fps=args.fps,
             codec=args.codec,
+            crf=args.crf,
+            preset=args.preset,
             bev_config=bev_config,
             fallback_calib=args.fallback_calib,
             skip_existing=args.skip_existing,
