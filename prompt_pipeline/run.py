@@ -34,6 +34,7 @@ from pipeline.evaluate.metrics import (
     save_version_metrics,
 )
 from pipeline.improve.failure_analyzer import analyze_failures
+from pipeline.improve.prompt_initializer import generate_initial_prompt
 from pipeline.improve.topk_modifier import (
     generate_next_prompt,
     next_version_name,
@@ -109,6 +110,36 @@ def _target_desc(scene_cfg) -> str:
         f"Precision>={t.precision}%",
     ]
     return "  ".join(p for p in parts if p)
+
+
+# ─────────────────────────────────────────────────────────────
+def run_init_prompt(args: argparse.Namespace) -> None:
+    """Generate an initial prompt for a scene via LLM."""
+    scene_cfg = load_scene(args.scene)
+
+    version = args.version or "v1"
+    prompt_path = scene_cfg.prompt_path(version)
+
+    if prompt_path.exists() and not args.force:
+        print(f"  ✗ {prompt_path} 已存在，使用 --force 覆盖")
+        return
+
+    desc = args.description or scene_cfg.display_name or args.scene
+    print(f"\n  生成初始 Prompt: 场景={args.scene}  版本={version}")
+    print(f"  描述: {desc}\n")
+
+    prompt_text = generate_initial_prompt(
+        scene_cfg=scene_cfg,
+        description=args.description or "",
+    )
+
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text(prompt_text, encoding="utf-8")
+    print(f"  ✓ 已保存 → {prompt_path}\n")
+    print("  可以运行以下命令开始评估:")
+    print(f"    python3 run.py --scene {args.scene} --sample 10")
+    print(f"  或开启迭代优化:")
+    print(f"    python3 run.py --scene {args.scene} --iterate")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -335,10 +366,21 @@ def main():
     parser.add_argument(
         "--max-rounds", type=int, default=None, help="Max iteration rounds"
     )
+    parser.add_argument(
+        "--init-prompt", action="store_true", help="Generate initial prompt via LLM"
+    )
+    parser.add_argument(
+        "--description", default=None, help="Scene description for --init-prompt"
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing prompt (for --init-prompt)"
+    )
 
     args = parser.parse_args()
 
-    if args.iterate:
+    if args.init_prompt:
+        run_init_prompt(args)
+    elif args.iterate:
         run_iterate(args)
     else:
         run_single(args)

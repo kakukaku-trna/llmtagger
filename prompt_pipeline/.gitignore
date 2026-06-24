@@ -7,3 +7,4 @@ prompts/*/metrics.json
 prompts/*/history.json
 logs/
 *.log
+.claude/
