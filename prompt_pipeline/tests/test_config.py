@@ -26,6 +26,7 @@ def test_load_scene_basic(scene_yaml, tmp_path):
     assert cfg.inference.engine == "dashscope"
     assert cfg.inference.model == "qwen3.7-plus"
     assert cfg.inference.api_key == "sk-fake"
+    assert cfg.inference.response_mode == "json"
 
 
 def test_load_scene_target(scene_yaml, tmp_path):
@@ -85,6 +86,7 @@ def test_inference_config_defaults():
     assert cfg.engine == "dashscope"
     assert cfg.workers == 5
     assert cfg.max_retries == 3
+    assert cfg.response_mode == "json"
 
 
 def test_token_budget_defaults():

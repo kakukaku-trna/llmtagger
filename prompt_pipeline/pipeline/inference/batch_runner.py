@@ -184,14 +184,21 @@ class BatchRunner:
 
     @staticmethod
     def _print_result(r: InferResult):
-        correct = ("✓" if r.result == r.label else "✗") if r.status == "success" else " "
         p = Path(r.video_path)
         name = p.name if p.is_file() else f"{p.name} (frames)"
-        print(f"  [{correct}] {name}")
-        print(
-            f"       标签={r.label}  预测={r.result}  "
-            f"耗时={r.elapsed:.1f}s  tok={r.total_tokens}"
-        )
+        if r.label:
+            correct = ("✓" if r.result == r.label else "✗") if r.status == "success" else " "
+            print(f"  [{correct}] {name}")
+            print(
+                f"       标签={r.label}  预测={r.result}  "
+                f"耗时={r.elapsed:.1f}s  tok={r.total_tokens}"
+            )
+        else:
+            preview = (r.result or r.raw_response or "").replace("\n", " ").strip()
+            if len(preview) > 80:
+                preview = preview[:77] + "..."
+            print(f"  [·] {name}")
+            print(f"       输出={preview}  耗时={r.elapsed:.1f}s  tok={r.total_tokens}")
         if r.status != "success":
             print(f"       错误: {r.error[:100]}")
 

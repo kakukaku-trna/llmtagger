@@ -2,27 +2,61 @@
 
 ## 项目概述
 
-多模态视频标注流水线，用于自动驾驶安全场景检测。通过 DashScope/Qwen 视觉模型对视频片段进行批量推理并评估 P/R/F1，支持自动 prompt 迭代优化。
+多模态视频标注流水线，用于自动驾驶安全场景检测。通过 DashScope/Qwen 视觉模型对视频片段进行批量推理并评估 P/R/F1，支持自动 prompt 生成与迭代优化。
 
 ## 目录结构
 
 ```
-scenes/          — 每个场景一个 YAML 配置（数据路径、推理参数、迭代策略）
-prompts/         — 各场景的 prompt 版本（v1.md, v2.md...）及 metrics.json
-pipeline/        — 核心代码（data 加载、推理、评估、优化）
-scripts/         — 辅助脚本（视频下载等）
-data_uuid/       — UUID 列表文件
-flows/           — Prefect 流编排（可选）
-run.py           — 主入口（自动加载 .env）
-.env             — API key 等密钥（不提交 git）
+scenes/                   — 每个场景一个 YAML 配置（数据路径、推理参数、迭代策略）
+prompts/                  — 各场景的 prompt 版本（v1.md, v2.md...）及 metrics.json / history.json
+pipeline/                 — 核心代码
+  ├── config.py           — YAML → dataclass 配置加载（含 ${VAR} 环境变量占位符）
+  ├── data/               — 数据加载（local_loader / stream_loader / modality 多模态编码）
+  ├── inference/          — 推理客户端（dashscope_client / vllm_client / batch_runner 并发调度）
+  ├── evaluate/           — P/R/F1 评估、混淆矩阵、metrics.json 持久化
+  ├── improve/            — Prompt 自动生成与迭代优化（初始生成 / 失败归因 / Top-K 规则修改 / Markdown 解析）
+  └── monitor/            — Token 计数与预算告警（控制台 / 飞书 / 邮件）
+skills/                   — 可复用规则与模板库（road_geometry / traffic_elements / prompt_templates）
+scripts/                  — 辅助脚本（ADW 视频下载、eval_benchmark 标注等）
+flows/                    — Prefect 流编排（可选，无 Prefect 时降级为顺序执行）
+run.py                    — 主入口（自动加载 .env）
+.env                      — API key 等密钥（不提交 git）
 ```
+
+## 核心模块说明
+
+| 模块 | 职责 |
+|------|------|
+| `pipeline/data/local_loader` | 扫描 `positive_dir`/`negative_dir` 下的 `.mp4` 或 `frame_*.jpg`，构造 `Sample` 列表 |
+| `pipeline/data/modality/` | 多模态输入编码：image（PIL 缩放 base64）、video（ffmpeg 关键帧提取）、bev（鸟瞰图）、pointcloud（点云渲染）、topic（传感器元数据） |
+| `pipeline/inference/dashscope_client` | DashScope API 客户端，含重试、token 统计、JSON 响应解析 |
+| `pipeline/inference/vllm_client` | 本地 vLLM 客户端，用 `file://` URL 避 base64 开销 |
+| `pipeline/inference/batch_runner` | `ThreadPoolExecutor` 并发推理、超时检测、结果缓存（JSON 持久化） |
+| `pipeline/evaluate/metrics` | 计算 P/R/F1/混淆矩阵，支持多版本对比和 best_version 选取 |
+| `pipeline/improve/failure_analyzer` | 区分 FP（误报）/ FN（漏报），生成 `FailureReport` |
+| `pipeline/improve/prompt_initializer` | LLM 自动生成初始 Prompt，接入 skills 规则库作为上下文 |
+| `pipeline/improve/topk_modifier` | 基于失败案例调 LLM 重写 Top-K 规则，生成 `v(n+1).md` 并追加 `history.json` |
+| `pipeline/improve/prompt_parser` | 将 Markdown Prompt 解析为 Section/Rule 结构（支持按规则定位替换） |
+| `pipeline/monitor/token_tracker` | 线程安全 token 计数，支持轮次/全局预算阈值告警 |
+| `pipeline/monitor/alert` | 统一告警分发（控制台 + 飞书 + 邮件） |
+| `skills/` | 规则集与 Prompt 模板（road_geometry / traffic_elements / prompt_templates） |
+| `flows/` | Prefect 编排：`scene_flow`（单场景评估+迭代）、`multi_scene_flow`（多场景并发+汇总） |
 
 ## 快速开始
 
 ```bash
 cd /home/huajiang.sun/llmtagger/prompt_pipeline
 
-# .env 已配置好，直接运行：
+# 方式一：全自动流程（推荐）
+# 1. 写好 scenes/{scene}.yaml（只需数据路径 + 模型配置）
+# 2. LLM 自动生成初始 prompt
+python3 run.py --scene {scene} --init-prompt --description "场景描述，如：检测视频中的动物"
+# 3. 跑评估
+python3 run.py --scene {scene} --sample 10
+# 4. 开启 prompt 迭代优化
+python3 run.py --scene {scene} --iterate
+
+# 方式二：手动写 prompts/{scene}/v1.md，直接评估
 python3 run.py --scene bus_lane --sample 5
 
 # 全量推理
@@ -32,26 +66,54 @@ python3 run.py --scene bus_lane
 python3 run.py --scene bus_lane --iterate
 ```
 
-## API Key 配置
+### `--init-prompt` 自动生成 Prompt
 
-`.env` 文件在项目根目录，`run.py` 启动时自动加载：
+用户只需提供一句场景描述，LLM 会基于 `skills/` 规则库自动生成结构完整的初始 Prompt（任务 → 概念定义 → 关键视觉特征 → 判断逻辑 → 注意事项 → 输出格式），无需手写。
 
 ```bash
-# .env 内容
-DASHSCOPE_API_KEY=sk-4cc9e93494ca4b8e88f2f7b071e57db3
-ADW_USER=dayun.shen
-ADW_PROD_PASS=ORSGVU6EF9
-ADW_STG_PASS=G4IDTL2YJW
+# 生成初始 prompt（默认版本 v1，已存在则需 --force 覆盖）
+python3 run.py --scene animal --init-prompt --description "检测行车记录仪视频中是否出现动物"
+
+# 覆盖已存在的 v1.md
+python3 run.py --scene animal --init-prompt --description "..." --force
+
+# 生成后可直接迭代
+python3 run.py --scene animal --iterate --max-rounds 3
+```
+
+规则库接入逻辑：
+- 有专属规则的场景（如 `blind_curve`）：LLM 拿到道路几何 + 交通元素规则作为参考
+- 无专属规则的场景（如 `animal`、天气类）：LLM 拿到通用交通规则，自行生成场景特定规则
+
+## API Key 配置
+
+`.env` 文件在项目根目录，`run.py` 启动时自动加载。**切勿在本文档或任何源码中写入真实密钥**，所有密钥只在 `.env` 中维护：
+
+```bash
+# .env 内容示例（实际值请填入 .env，勿提交到 git）
+DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+ADW_USER=<your_adw_user>
+ADW_PROD_PASS=<your_adw_prod_pass>
+ADW_STG_PASS=<your_adw_stg_pass>
 ```
 
 `.env` 已加入 `.gitignore`，不会提交到 git。
 
 ## 已有场景
 
-| 场景名 | 描述 | 数据路径 |
-|--------|------|----------|
-| `blind_curve` | 大曲率盲区检测 | `/home/huajiang.sun/model_muse/positive_data` |
-| `bus_lane` | 公交车道检测 | `/home/huajiang.sun/model_muse/bus_lane_pos` (150 视频) |
+| 场景名 | 描述 | 引擎/模型 |
+|--------|------|-----------|
+| `animal` | 动物检测 | dashscope / qwen3.7-plus |
+| `blind_curve` | 大曲率盲区检测 | dashscope / qwen3.7-plus |
+| `blind_curve_vllm` | 大曲率盲区检测（本地 vLLM） | vllm / Qwen2.5-VL-3B-Instruct |
+| `bus_lane` | 公交车道检测 | dashscope / qwen3.7-plus |
+| `duoyun` | 多云检测 | dashscope / qwen3.7-plus |
+| `qiangfanshe` | 强反射（白天逆光）检测 | dashscope / qwen3.7-plus |
+| `qingtian` | 晴天检测 | dashscope / qwen3.7-plus |
+| `wutian` | 雾天检测 | dashscope / qwen3.7-plus |
+| `xuetian` | 雪天检测 | dashscope / qwen3.7-plus |
+| `yutian` | 雨天检测 | dashscope / qwen3.7-plus |
+| `you_feijidongchedao` | 有非机动车道检测 | dashscope / qwen3.7-plus |
 
 ## 从 ADW 下载视频
 
@@ -183,8 +245,9 @@ botocore（Python 3.8 版本）与 Python 3.12 的 urllib3 不兼容（`cannot i
 
 1. 准备视频到本地目录，按 `{uuid}/{uuid}_{camera}.mp4` 组织
 2. 在 `scenes/` 创建 `{scene}.yaml`（参考 `bus_lane.yaml`）
-3. 在 `prompts/{scene}/` 创建 `v1.md`
+3. 自动生成初始 prompt：`python3 run.py --scene {scene} --init-prompt --description "场景描述"`
 4. 运行：`python3 run.py --scene {scene} --sample 10`
+5. 或直接迭代优化：`python3 run.py --scene {scene} --iterate`
 
 ## 关键配置项
 

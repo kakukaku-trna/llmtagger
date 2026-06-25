@@ -84,6 +84,8 @@ class TokenTracker:
         with self._lock:
             rt = self._round_usage.total
             pt = self._pipeline_usage.total
+            if rt == 0 and self._rounds_history:
+                rt = self._rounds_history[-1].total
         parts = []
         if scene:
             parts.append(f"场景={scene}")
