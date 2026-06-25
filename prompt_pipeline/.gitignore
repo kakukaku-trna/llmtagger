@@ -13,3 +13,7 @@ tmp_ab_front120trim/
 tmp_ab_front120trim_3/
 tmp_ab_front30trim/
 tmp_review/
+
+# BEV generation outputs
+batch_bev_log.json
+*.mp4
