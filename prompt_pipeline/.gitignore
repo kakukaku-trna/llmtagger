@@ -8,3 +8,8 @@ prompts/*/history.json
 logs/
 *.log
 .claude/
+captions/
+tmp_ab_front120trim/
+tmp_ab_front120trim_3/
+tmp_ab_front30trim/
+tmp_review/

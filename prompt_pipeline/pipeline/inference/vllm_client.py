@@ -24,6 +24,7 @@ class VLLMClient:
         import datetime
 
         t0 = datetime.datetime.now()
+        raw = ""
 
         out = InferResult(
             video_path=sample.video_path,
@@ -39,7 +40,7 @@ class VLLMClient:
 
         try:
             raw, pt, ct = self._call_api(sample.video_path, prompt)
-            result, reason = _parse_response(raw)
+            result, reason = _parse_response(raw, self._config.response_mode)
             out.raw_response = raw  # 保存原始响应文本
             out.result = result
             out.reason = reason

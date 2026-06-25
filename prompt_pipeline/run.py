@@ -1,14 +1,28 @@
-"""LLMTagger – unified entry point.
+"""LLMTagger 统一入口脚本。
 
-Usage:
-    python run.py --scene blind_curve [--version v1] [--sample 10] [--iterate] [--max-rounds 3]
+这个文件负责把 scene 配置、prompt、数据加载、模型推理、评估统计和
+caption 导出串成一个可直接执行的 CLI 入口。脚本启动时会自动读取项目
+根目录下的 `.env`，再根据 `scenes/{scene}.yaml` 中的配置选择模型、
+数据目录和运行模式。
+
+目前主要支持三类用法：
+1. 单轮评估：读取正负样本，跑一次推理并输出 precision / recall / F1。
+2. 迭代优化：在评估结果基础上分析失败案例，自动生成下一版 prompt。
+3. Caption 导出：对显式传入的视频或帧目录生成纯文本描述，不走二分类评估。
+
+常用示例：
+    python run.py --scene blind_curve --sample 10
+    python run.py --scene blind_curve --iterate --max-rounds 3
+    python run.py --scene multicam_caption --caption --input /path/to/video.mp4
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Allow running from the llmtagger/ directory without installing
@@ -24,7 +38,7 @@ if _env_file.exists():
             os.environ.setdefault(_k.strip(), _v.strip())
 
 from pipeline.config import load_scene
-from pipeline.data.local_loader import load_samples
+from pipeline.data.local_loader import load_samples, load_unlabeled_samples
 from pipeline.evaluate.metrics import (
     best_version,
     calc_metrics,
@@ -40,7 +54,7 @@ from pipeline.improve.topk_modifier import (
     next_version_name,
     save_new_version,
 )
-from pipeline.inference.batch_runner import BatchRunner
+from pipeline.inference.batch_runner import BatchRunner, build_client
 from pipeline.monitor.alert import AlertLevel, emit_alert
 from pipeline.monitor.raw_log import RawLogWriter
 from pipeline.monitor.token_tracker import TokenTracker
@@ -57,6 +71,7 @@ def load_prompt(scene_cfg, version: str) -> str:
 # 飞书告警 webhook — 硬编码，无需配置
 # 原始响应日志根目录
 LOGS_DIR = Path(__file__).parent / "logs"
+CAPTIONS_DIR = Path(__file__).parent / "captions"
 FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/2e1e6058-0122-442b-9dfb-6e97506c8014"
 FEISHU_MENTION_ID = os.environ.get("FEISHU_MENTION_ID", "all")
 
@@ -179,6 +194,223 @@ def run_single(args: argparse.Namespace) -> None:
     all_versions = load_all_versions(scene_cfg.metrics_path())
     if len(all_versions) > 1:
         print_versions_table(all_versions)
+
+
+def _caption_output_dir(scene: str, output_dir: str | None) -> Path:
+    if output_dir:
+        return Path(output_dir)
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return CAPTIONS_DIR / scene / f"caption_{now}"
+
+
+def _result_uuid(video_path: str) -> str:
+    path = Path(video_path)
+    if path.is_dir():
+        return path.name
+    return path.parent.name or path.stem
+
+
+def _caption_len(text: str) -> int:
+    return len(text.strip())
+
+
+def _caption_valid(result, scene_cfg) -> bool:
+    if result.status != "success" or not result.result.strip():
+        return False
+    min_chars = scene_cfg.caption.min_chars
+    max_chars = scene_cfg.caption.max_chars
+    text_len = _caption_len(result.result)
+    if min_chars and text_len < min_chars:
+        return False
+    if max_chars and text_len > max_chars:
+        return False
+    return True
+
+
+def _build_caption_retry_prompt(
+    base_prompt: str,
+    *,
+    previous_result: str,
+    previous_status: str,
+    min_chars: int,
+    max_chars: int,
+) -> str:
+    text_len = _caption_len(previous_result) if previous_result else 0
+    note = (
+        f"上一版输出状态为 {previous_status}，长度为 {text_len} 字，"
+        f"未满足 {min_chars}-{max_chars} 字的要求。"
+    )
+    prev = previous_result or "上一版没有产出有效描述。"
+    return (
+        f"{base_prompt}\n\n"
+        f"补充要求：{note}"
+        "请在不编造视频中不存在内容的前提下重写整段描述，优先补充时间顺序、本车速度变化、"
+        "交互车辆位置与状态、交通信号灯、车道与路况细节。"
+        f"最终输出必须严格在 {min_chars}-{max_chars} 字之间，且仍然只输出一段纯中文文本。\n"
+        f"上一版输出：{prev}"
+    )
+
+
+def _enforce_caption_constraints(
+    runner: BatchRunner,
+    scene_cfg,
+    samples,
+    prompt: str,
+    *,
+    scene: str,
+    version: str,
+    results,
+):
+    if scene_cfg.caption.max_attempts <= 1:
+        return results
+
+    ordered_paths = [sample.video_path for sample in samples]
+    result_map = {result.video_path: result for result in results}
+    client = build_client(scene_cfg.inference)
+
+    for attempt in range(2, scene_cfg.caption.max_attempts + 1):
+        pending = [
+            sample
+            for sample in samples
+            if not _caption_valid(result_map[sample.video_path], scene_cfg)
+        ]
+        if not pending:
+            break
+
+        print(
+            f"\n  Caption 长度校正: 第 {attempt}/{scene_cfg.caption.max_attempts} 次尝试"
+            f"  待重试={len(pending)}"
+        )
+
+        previous_map = {sample.video_path: result_map[sample.video_path] for sample in pending}
+
+        def _retry_infer(sample):
+            previous = previous_map[sample.video_path]
+            retry_prompt = _build_caption_retry_prompt(
+                prompt,
+                previous_result=previous.result,
+                previous_status=previous.status,
+                min_chars=scene_cfg.caption.min_chars,
+                max_chars=scene_cfg.caption.max_chars,
+            )
+            return client.infer(sample, retry_prompt)
+
+        retried = runner.run(
+            pending,
+            prompt,
+            infer_fn=_retry_infer,
+            scene=scene,
+            version=f"{version}_retry{attempt}",
+            round_n=attempt,
+        )
+        for result in retried:
+            result_map[result.video_path] = result
+
+    return [result_map[path] for path in ordered_paths]
+
+
+def _write_caption_results(
+    output_dir: Path,
+    *,
+    prompt: str,
+    results,
+    scene: str,
+    version: str,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "prompt_used.md").write_text(prompt, encoding="utf-8")
+
+    summary_path = output_dir / "results.jsonl"
+    used_names: dict[str, int] = {}
+
+    with summary_path.open("w", encoding="utf-8") as f:
+        for result in results:
+            base_name = _result_uuid(result.video_path)
+            count = used_names.get(base_name, 0)
+            used_names[base_name] = count + 1
+            file_name = f"{base_name}_{count + 1}" if count else base_name
+
+            caption_file = ""
+            if result.status == "success" and result.result:
+                caption_file = f"{file_name}.txt"
+                (output_dir / caption_file).write_text(result.result, encoding="utf-8")
+
+            record = {
+                "scene": scene,
+                "version": version,
+                "uuid": base_name,
+                "video_path": result.video_path,
+                "status": result.status,
+                "caption_file": caption_file,
+                "caption": result.result,
+                "error": result.error,
+                "elapsed": result.elapsed,
+                "prompt_tokens": result.prompt_tokens,
+                "completion_tokens": result.completion_tokens,
+                "total_tokens": result.total_tokens,
+            }
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    return summary_path
+
+
+def run_caption(args: argparse.Namespace) -> None:
+    """Run caption generation for explicit video or frame inputs."""
+    if not args.input:
+        raise ValueError("--caption 模式必须提供 --input")
+
+    scene_cfg = load_scene(args.scene)
+    version = args.version or scene_cfg.latest_prompt_version()
+    prompt = load_prompt(scene_cfg, version)
+    samples = load_unlabeled_samples(args.input, sample_size=args.sample)
+
+    if not samples:
+        raise ValueError("未找到可用的视频或帧目录")
+
+    print(f"\n LLMTagger (Caption 模式)  场景={args.scene}  版本={version}  样本数={len(samples)}")
+    print(
+        f"  推理引擎: {scene_cfg.inference.engine}  模型: {scene_cfg.inference.model}"
+        f"  输出模式: {scene_cfg.inference.response_mode}\n"
+    )
+
+    tracker = TokenTracker(scene_cfg.token_budget)
+    log_path = RawLogWriter.make_log_path(LOGS_DIR, args.scene)
+    log_writer = RawLogWriter(log_path)
+    runner = BatchRunner(
+        config=scene_cfg.inference,
+        tracker=tracker,
+        feishu_webhook=FEISHU_WEBHOOK,
+        alert_email=scene_cfg.alerts.email,
+        log_writer=log_writer,
+    )
+
+    results = runner.run(samples, prompt, scene=args.scene, version=version, round_n=1)
+    results = _enforce_caption_constraints(
+        runner,
+        scene_cfg,
+        samples,
+        prompt,
+        scene=args.scene,
+        version=version,
+        results=results,
+    )
+    tracker.end_round()
+
+    output_dir = _caption_output_dir(args.scene, args.output_dir)
+    summary_path = _write_caption_results(
+        output_dir,
+        prompt=prompt,
+        results=results,
+        scene=args.scene,
+        version=version,
+    )
+
+    success = sum(1 for result in results if result.status == "success")
+    print(f"\n  成功: {success}/{len(results)}")
+    print(f"  Caption 输出目录: {output_dir}")
+    print(f"  汇总文件: {summary_path}")
+    print(f"  原始响应日志: {log_path}")
+    print(tracker.summary_line(args.scene, round_n=1))
 
 
 def _print_best_prompt(scene_cfg, version: str, metrics) -> None:
@@ -375,11 +607,30 @@ def main():
     parser.add_argument(
         "--force", action="store_true", help="Overwrite existing prompt (for --init-prompt)"
     )
+    parser.add_argument(
+        "--caption", action="store_true", help="Generate free-form captions instead of evaluation"
+    )
+    parser.add_argument(
+        "--input",
+        nargs="+",
+        default=None,
+        help="One or more input video files or directories for --caption",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory for caption outputs (default: captions/{scene}/caption_*/)",
+    )
 
     args = parser.parse_args()
 
+    if args.caption and (args.iterate or args.init_prompt):
+        raise ValueError("--caption 不能与 --iterate 或 --init-prompt 同时使用")
+
     if args.init_prompt:
         run_init_prompt(args)
+    elif args.caption:
+        run_caption(args)
     elif args.iterate:
         run_iterate(args)
     else:

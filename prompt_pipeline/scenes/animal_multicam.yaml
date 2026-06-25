@@ -1,10 +1,10 @@
-name: animal
-display_name: 动物检测
+name: animal_multicam
+display_name: 动物检测-多摄
 
 data:
   mode: local
-  positive_dir: /home/huajiang.sun/data/singlecam_animal_pos
-  negative_dir: /home/huajiang.sun/data/singlecam_animal_neg
+  positive_dir: /home/huajiang.sun/data/multicam_animal_pos
+  negative_dir: /home/huajiang.sun/data/multicam_animal_neg
 
 inference:
   engine: dashscope

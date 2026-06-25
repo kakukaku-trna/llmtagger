@@ -44,6 +44,7 @@ class DashScopeClient:
         import datetime
 
         t0 = datetime.datetime.now()
+        raw = ""
 
         out = InferResult(
             video_path=sample.video_path,
@@ -65,7 +66,7 @@ class DashScopeClient:
             else:
                 b64 = _encode_video(sample.video_path)
                 raw, pt, ct = self._call_api(b64, prompt)
-            result, reason = _parse_response(raw)
+            result, reason = _parse_response(raw, self._config.response_mode)
             out.raw_response = raw  # 保存原始响应文本
             out.result = result
             out.reason = reason
@@ -186,14 +187,24 @@ def _encode_video(video_path: str) -> str:
         return base64.b64encode(f.read()).decode("utf-8")
 
 
-def _parse_response(content: str) -> Tuple[str, str]:
-    """Extract result and reason from LLM JSON response."""
+def _normalize_response_text(content: str) -> str:
+    """Convert SDK content payload to plain text and strip code fences."""
     text = content
     if isinstance(text, list):
         text = text[0].get("text", str(text[0])) if text else ""
     text = re.sub(r"```json\s*", "", text)
     text = re.sub(r"```\s*", "", text)
-    text = text.strip()
+    return text.strip()
+
+
+def _parse_response(content: str, response_mode: str = "json") -> Tuple[str, str]:
+    """Extract structured JSON or plain-text output from the model response."""
+    text = _normalize_response_text(content)
+
+    if response_mode == "text":
+        if not text:
+            raise ValueError("Empty text response")
+        return text, ""
 
     match = re.search(r"\{.*?\}", text, re.DOTALL)
     if not match:

@@ -29,6 +29,7 @@ class InferenceConfig:
     fps: int = 2
     thinking_budget: int = 512
     max_retries: int = 3
+    response_mode: str = "json"  # json | text
     api_key: str = ""
     api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     vllm_url: str = "http://localhost:8000/v1/chat/completions"
@@ -70,6 +71,13 @@ class AlertConfig:
 
 
 @dataclass
+class CaptionConfig:
+    min_chars: int = 0
+    max_chars: int = 0
+    max_attempts: int = 1
+
+
+@dataclass
 class SceneConfig:
     name: str
     display_name: str = ""
@@ -80,6 +88,7 @@ class SceneConfig:
     iteration: IterationConfig = field(default_factory=IterationConfig)
     token_budget: TokenBudget = field(default_factory=TokenBudget)
     alerts: AlertConfig = field(default_factory=AlertConfig)
+    caption: CaptionConfig = field(default_factory=CaptionConfig)
 
     def prompts_dir(self) -> Path:
         return PROMPTS_DIR / self.name
@@ -148,6 +157,7 @@ def load_scene(name: str, scenes_dir: Optional[Path] = None) -> SceneConfig:
     cfg.iteration = _load_iteration(raw.get("iteration", {}))
     cfg.token_budget = _load_token_budget(raw.get("token_budget", {}))
     cfg.alerts = _load_alerts(raw.get("alerts", {}))
+    cfg.caption = _load_caption(raw.get("caption", {}))
 
     # Resolve ${ENV_VAR} placeholders and fall back to env var if key not set
     cfg.inference.api_key = _resolve_env(cfg.inference.api_key) or os.environ.get("DASHSCOPE_API_KEY", "")
@@ -173,6 +183,7 @@ def _load_inference(d: dict) -> InferenceConfig:
         fps=int(d.get("fps", 2)),
         thinking_budget=int(d.get("thinking_budget", 512)),
         max_retries=int(d.get("max_retries", 3)),
+        response_mode=d.get("response_mode", "json"),
         api_key=d.get("api_key", ""),
         api_base=d.get("api_base", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         vllm_url=d.get("vllm_url", "http://localhost:8000/v1/chat/completions"),
@@ -213,6 +224,14 @@ def _load_token_budget(d: dict) -> TokenBudget:
 def _load_alerts(d: dict) -> AlertConfig:
     return AlertConfig(
         email=_resolve_env(d.get("email")),
+    )
+
+
+def _load_caption(d: dict) -> CaptionConfig:
+    return CaptionConfig(
+        min_chars=int(d.get("min_chars", 0)),
+        max_chars=int(d.get("max_chars", 0)),
+        max_attempts=int(d.get("max_attempts", 1)),
     )
 
 

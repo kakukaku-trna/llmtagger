@@ -31,8 +31,8 @@ def _discover_media(directory: str) -> List[str]:
     seen: set = set()
 
     # 1. Frame mode first: find directories containing frame_*.jpg
-    for jpg in sorted(root.rglob("frame_*.jpg")):
-        dir_ = jpg.parent
+    for jpg in sorted(glob.glob(str(root / "**" / "frame_*.jpg"), recursive=True)):
+        dir_ = Path(jpg).parent
         if dir_ not in seen:
             media.append(str(dir_))
             seen.add(dir_)
@@ -78,6 +78,43 @@ def load_samples(
         return sampled
 
     return all_samples
+
+
+def load_unlabeled_samples(
+    paths: List[str],
+    sample_size: Optional[int] = None,
+) -> List[Sample]:
+    """Load unlabeled samples from explicit files or directories."""
+    samples: List[Sample] = []
+    seen: set[str] = set()
+
+    for raw_path in paths:
+        path = Path(raw_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Input path not found: {raw_path}")
+
+        if path.is_file():
+            media_paths = [str(path)]
+        else:
+            media_paths = _discover_media(str(path))
+            if not media_paths and list(path.glob("frame_*.jpg")):
+                media_paths = [str(path)]
+
+        for media_path in media_paths:
+            if media_path in seen:
+                continue
+            seen.add(media_path)
+            samples.append(
+                Sample(
+                    video_path=media_path,
+                    label="",
+                    uuid=_extract_uuid(media_path),
+                )
+            )
+
+    if sample_size is not None:
+        return samples[:sample_size]
+    return samples
 
 
 def _load_dir(directory: str, label: str) -> List[Sample]:
