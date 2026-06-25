@@ -29,18 +29,19 @@ def download_ceph_file(remote_path, local_path):
 
 
 def should_download_image(file: DatasetFile) -> bool:
-    """判断是否是图片文件"""
+    """判断是否是图片或视频文件"""
     raw_key = file.raw_key() or ""
-    
-    # 根据raw_key判断是否是图片
-    # 数据集中的图片key格式示例: 1.tsr.sensor.default.FW.jpg
-    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.gif']
-    
+
+    download_extensions = [
+        '.jpg', '.jpeg', '.png', '.bmp', '.gif',   # 图片
+        '.mp4', '.avi', '.mov', '.mkv', '.ts',      # 视频
+    ]
+
     raw_key_lower = raw_key.lower()
-    for ext in image_extensions:
+    for ext in download_extensions:
         if raw_key_lower.endswith(ext):
             return True
-    
+
     return False
 
 
@@ -174,9 +175,21 @@ def download_dataset_images(
     total_patch_data_ids = 0   # 需要补全的 data_id 数量
     
     # 遍历每条数据
+    _debug_printed = False  # 只打印第一条的结构
     for data_item in data_list:
         data_id = data_item.data_id
-        
+
+        # 调试：打印第一条数据的原始结构
+        if not _debug_printed:
+            print(f"\n[DEBUG] 第一条数据结构:")
+            print(f"  data_id: {data_id}")
+            print(f"  data_type: {getattr(data_item, 'data_type', 'N/A')}")
+            print(f"  public_files: {getattr(data_item, 'public_files', 'N/A')}")
+            print(f"  private_files: {getattr(data_item, 'private_files', 'N/A')}")
+            print(f"  public_metas: {getattr(data_item, 'public_metas', 'N/A')}")
+            print(f"  所有属性: {[k for k in vars(data_item).keys()]}")
+            _debug_printed = True
+
         # 获取数据详情和文件列表
         # 从data_item中获取public_files
         file_list = []
@@ -290,23 +303,27 @@ if __name__ == '__main__':
         # "da_mining_etc_manual_20260520_frame",
         # "da_mining_manual_20260520_frame",
         # "da_mining_self_service_etc_20260520_frame",
-        "da_mining_lane_closed_20260521_frame",
+        # "da_mining_lane_closed_20260521_frame",
         # "da_mining_car_truck_etc_train_20260526",
         # "da_mining_free_train_20260526",
+        "da_mining_two_way_single_lane_20260610_subclip",   # 双向单车道数据集
     ]
-    
+
+    # 数据存放根目录
+    DATA_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+
     # 循环处理每个数据集
     for dataset_name in DATASET_LIST:
         print("\n" + "="*70)
         print(f"开始处理数据集: {dataset_name}")
         print("="*70)
-        
+
         try:
             download_dataset_images(
                 dataset_nickname=dataset_name,
                 env=ENV,
-                base_dir=dataset_name,                          # 原数据目录
-                supplement_dir=f"{dataset_name}_supplement",    # 补充目录
+                base_dir=os.path.join(DATA_ROOT, dataset_name),
+                supplement_dir=os.path.join(DATA_ROOT, f"{dataset_name}_supplement"),
                 max_data_count=MAX_DATA_COUNT,
             )
         except Exception as e:

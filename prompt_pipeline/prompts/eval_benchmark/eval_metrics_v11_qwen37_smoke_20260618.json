@@ -1,0 +1,89 @@
+{
+  "公交车道": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "非机动车道": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "路面积水": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "双向单车道": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "前方左转待转区": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "逆光": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "炫光": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "强反射": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "光影": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "道路积雪": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "天气": {
+    "accuracy": 100.0,
+    "correct": 1,
+    "total": 1,
+    "n_classes": 1,
+    "confusion": {
+      "晴天→晴天": 1
+    }
+  },
+  "时段": {
+    "accuracy": 100.0,
+    "correct": 1,
+    "total": 1
+  },
+  "_summary": {
+    "total_clips": 1,
+    "parsed_ok": 1,
+    "failed_or_parse_error": 0
+  },
+  "cost": {
+    "input_tokens": 7650,
+    "output_tokens": 605,
+    "total_tokens": 8255,
+    "cost_cny": 0.02,
+    "clips_ok": 1,
+    "clips_failed": 0
+  }
+}

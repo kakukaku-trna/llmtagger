@@ -1,0 +1,75 @@
+{
+  "公交车道": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "双向单车道": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "前方左转待转区": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "逆光": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "炫光": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "强反射": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "光影": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "道路积雪": {
+    "TP": 0,
+    "FN": 0,
+    "positives_in_gt": 0,
+    "recall": null
+  },
+  "天气": {
+    "accuracy": 0.0,
+    "correct": 0,
+    "total": 0,
+    "n_classes": 0,
+    "confusion": {}
+  },
+  "时段": {
+    "accuracy": 0.0,
+    "correct": 0,
+    "total": 0
+  },
+  "_summary": {
+    "total_clips": 3,
+    "parsed_ok": 0,
+    "failed_or_parse_error": 3
+  },
+  "cost": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "cost_cny": 0.0,
+    "clips_ok": 0,
+    "clips_failed": 3
+  }
+}

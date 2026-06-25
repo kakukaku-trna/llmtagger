@@ -1,0 +1,4 @@
+clip_id,status,pred_天气,pred_时段,pred_公交车道,pred_双向单车道,pred_前方左转待转区,pred_逆光,pred_炫光,pred_强反射,pred_光影,pred_道路积雪,reason
+b3420c50-e425-4d62-bcdd-05be306622a2,failed,,,,,,,,,,,vLLM failed after 3 retries: 422 Client Error: Unprocessable Entity for url: http://localhost:8001/v1/chat/completions
+92c3b06a-6992-481f-9070-77db7771e5d8,failed,,,,,,,,,,,vLLM failed after 3 retries: 422 Client Error: Unprocessable Entity for url: http://localhost:8001/v1/chat/completions
+9c91ff00-87b4-4498-8176-911056d335d5,failed,,,,,,,,,,,vLLM failed after 3 retries: 422 Client Error: Unprocessable Entity for url: http://localhost:8001/v1/chat/completions

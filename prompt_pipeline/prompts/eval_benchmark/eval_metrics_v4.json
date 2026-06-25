@@ -1,0 +1,192 @@
+{
+  "公交车道": {
+    "TP": 0,
+    "FN": 25,
+    "positives_in_gt": 25,
+    "recall": 0.0,
+    "precision": 0,
+    "FP": 0,
+    "f1": 0
+  },
+  "双向单车道": {
+    "TP": 8,
+    "FN": 17,
+    "positives_in_gt": 25,
+    "recall": 32.0,
+    "precision": 100.0,
+    "FP": 0,
+    "f1": 48.5
+  },
+  "前方左转待转区": {
+    "TP": 0,
+    "FN": 25,
+    "positives_in_gt": 25,
+    "recall": 0.0,
+    "precision": 0,
+    "FP": 0,
+    "f1": 0
+  },
+  "逆光": {
+    "TP": 0,
+    "FN": 25,
+    "positives_in_gt": 25,
+    "recall": 0.0,
+    "precision": 0,
+    "FP": 0,
+    "f1": 0
+  },
+  "炫光": {
+    "TP": 1,
+    "FN": 24,
+    "positives_in_gt": 25,
+    "recall": 4.0,
+    "precision": 100.0,
+    "FP": 0,
+    "f1": 7.7
+  },
+  "强反射": {
+    "TP": 0,
+    "FN": 25,
+    "positives_in_gt": 25,
+    "recall": 0.0,
+    "precision": 0,
+    "FP": 0,
+    "f1": 0
+  },
+  "光影": {
+    "TP": 0,
+    "FN": 24,
+    "positives_in_gt": 24,
+    "recall": 0.0,
+    "precision": 0,
+    "FP": 0,
+    "f1": 0
+  },
+  "道路积雪": {
+    "TP": 46,
+    "FN": 4,
+    "positives_in_gt": 50,
+    "recall": 92.0,
+    "precision": 100.0,
+    "FP": 0,
+    "f1": 95.8
+  },
+  "天气": {
+    "accuracy": 76.0,
+    "correct": 95,
+    "total": 125,
+    "n_classes": 5,
+    "confusion": {
+      "雾天→雾天": 21,
+      "雪天→雪天": 21,
+      "晴天→晴天": 20,
+      "雨天→雨天": 20,
+      "阴天→阴天": 13,
+      "阴天→晴天": 9,
+      "雨天→阴天": 4,
+      "雪天→雨天": 4,
+      "阴天→雨天": 3,
+      "雾天→雪天": 3,
+      "晴天→雨天": 2,
+      "晴天→阴天": 2,
+      "晴天→雾天": 1,
+      "雨天→晴天": 1,
+      "雾天→夜晚": 1
+    },
+    "per_class_pr": {
+      "晴天": {
+        "TP": 20,
+        "FP": 10,
+        "FN": 5,
+        "precision": 66.7,
+        "recall": 80.0,
+        "f1": 72.7,
+        "support": 25
+      },
+      "阴天": {
+        "TP": 13,
+        "FP": 6,
+        "FN": 12,
+        "precision": 68.4,
+        "recall": 52.0,
+        "f1": 59.1,
+        "support": 25
+      },
+      "雨天": {
+        "TP": 20,
+        "FP": 9,
+        "FN": 5,
+        "precision": 69.0,
+        "recall": 80.0,
+        "f1": 74.1,
+        "support": 25
+      },
+      "雾天": {
+        "TP": 21,
+        "FP": 1,
+        "FN": 4,
+        "precision": 95.5,
+        "recall": 84.0,
+        "f1": 89.4,
+        "support": 25
+      },
+      "雪天": {
+        "TP": 21,
+        "FP": 3,
+        "FN": 4,
+        "precision": 87.5,
+        "recall": 84.0,
+        "f1": 85.7,
+        "support": 25
+      }
+    }
+  },
+  "时段": {
+    "accuracy": 97.0,
+    "correct": 97,
+    "total": 100,
+    "per_class_pr": {
+      "白天": {
+        "TP": 74,
+        "FP": 2,
+        "FN": 1,
+        "precision": 97.4,
+        "recall": 98.7,
+        "f1": 98.0,
+        "support": 75
+      },
+      "夜晚": {
+        "TP": 23,
+        "FP": 1,
+        "FN": 2,
+        "precision": 95.8,
+        "recall": 92.0,
+        "f1": 93.9,
+        "support": 25
+      }
+    }
+  },
+  "_summary": {
+    "total_clips": 375,
+    "parsed_ok": 374,
+    "failed_or_parse_error": 1
+  },
+  "cost": {
+    "input_tokens": 2923558,
+    "output_tokens": 44385,
+    "total_tokens": 2967943,
+    "cost_cny": 6.2,
+    "clips_ok": 374,
+    "clips_failed": 1
+  },
+  "cost_timing": {
+    "clips_ok": 374,
+    "total_elapsed_s": 3673.0,
+    "avg_elapsed_per_clip_s": 9.82,
+    "wall_time_10workers_s": 367.3,
+    "wall_time_per_clip_s": 0.982,
+    "machine_cost_cny_per_month": 5000,
+    "seconds_per_month": 2592000,
+    "cost_per_clip_cny_wall": 0.001894
+  }
+}
